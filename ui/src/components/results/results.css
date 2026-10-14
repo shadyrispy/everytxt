@@ -1,0 +1,584 @@
+/* ============================================================
+   子项 2：结果列表 / 批量操作条样式
+   所有颜色取自 base.css 设计令牌（--c-* / --h-* / --font-*），不硬编码色值。
+   ============================================================ */
+
+/* 结果区容器（SelectionBar + ResultList）；App.tsx 未定义，这里补齐纵向布局 */
+.result-area {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--c-border);
+}
+
+/* ----------------------------- 批量操作条 ----------------------------- */
+
+.selection-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px;
+  background: var(--c-bg-alt);
+  border-bottom: 1px solid var(--c-border);
+  flex-wrap: wrap;
+}
+
+.selection-bar .sel-count {
+  color: var(--c-text-dim);
+  white-space: nowrap;
+}
+
+.selection-bar .sel-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.btn.danger {
+  color: var(--c-danger);
+  border-color: var(--c-danger);
+}
+.btn.danger:hover:not(:disabled) {
+  background: var(--c-bg-sunken);
+}
+
+/* ------------------------------ 结果列表 ------------------------------ */
+
+.result-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  outline: none;
+}
+
+.result-list .empty {
+  flex: 1;
+}
+
+.result-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: var(--fs-ui);
+}
+
+.result-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  font-weight: 400;
+  color: var(--c-text-dim);
+  background: var(--c-bg-alt);
+  border-bottom: 1px solid var(--c-border);
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+
+.result-table thead th.th-sort {
+  cursor: pointer;
+  user-select: none;
+}
+.result-table thead th.th-sort:hover {
+  color: var(--c-text);
+}
+.result-table thead th.active {
+  color: var(--c-text);
+}
+.result-table thead th .sort-arrow {
+  display: inline-block;
+  min-width: 10px;
+  margin-left: 2px;
+  font-size: 9px;
+}
+.result-table thead th.th-hits {
+  width: 46px;
+  text-align: center;
+}
+
+/* 列宽 */
+.result-table td.col-name {
+  width: 38%;
+}
+.result-table td.col-mtime {
+  width: 20%;
+}
+.result-table td.col-hits {
+  width: 46px;
+  text-align: center;
+}
+
+.result-row {
+  cursor: default;
+  line-height: 20px;
+}
+.result-row > td {
+  padding: 0 8px;
+  border-bottom: 1px solid var(--c-border);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.result-row:hover {
+  background: var(--c-row-hover);
+}
+/* 多选态 */
+.result-row.multi {
+  background: var(--c-accent-soft);
+}
+/* 活动行（右栏预览跟随）优先于多选 */
+.result-row.selected {
+  background: var(--c-row-sel);
+}
+
+.result-row td.col-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.result-row .fname {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.col-mtime,
+.col-path {
+  color: var(--c-text-dim);
+}
+
+/* 文件类型着色图标（描边风：边框与文字同色，主题安全） */
+.ftype {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 14px;
+  padding: 0 3px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  font-size: 8px;
+  line-height: 1;
+  letter-spacing: 0.2px;
+  color: var(--c-text-dim);
+}
+.ftype[data-kind='pdf'] {
+  color: var(--c-danger);
+}
+.ftype[data-kind='ebook'] {
+  color: var(--c-ok);
+}
+.ftype[data-kind='text'] {
+  color: var(--c-ok);
+}
+.ftype[data-kind='doc'] {
+  color: var(--c-accent);
+}
+.ftype[data-kind='sheet'] {
+  color: var(--c-ok);
+}
+.ftype[data-kind='slide'] {
+  color: var(--c-accent);
+}
+.ftype[data-kind='zip'] {
+  color: var(--c-text-dim);
+}
+.ftype[data-kind='markup'] {
+  color: var(--c-accent);
+}
+.ftype[data-kind='plain'] {
+  color: var(--c-text-dim);
+}
+.ftype[data-kind='other'] {
+  color: var(--c-text-dim);
+}
+
+/* 命中数徽标（hits > 1 才出现，任务卡 1.5） */
+.hit-badge {
+  display: inline-block;
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--c-accent);
+  color: var(--c-bg);
+  font-size: 10px;
+  line-height: 15px;
+  text-align: center;
+}
+
+/* ------------------------------ 悬停预览 ------------------------------ */
+
+.hover-preview {
+  position: fixed;
+  z-index: 900;
+  max-width: 420px;
+  padding: 6px 8px;
+  background: var(--c-bg);
+  border: 1px solid var(--c-border-strong);
+  border-radius: 3px;
+  box-shadow: 0 4px 12px var(--c-border-strong);
+  pointer-events: none;
+}
+.hover-preview-name {
+  font-weight: 600;
+  margin-bottom: 3px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.hover-preview-snippet {
+  color: var(--c-text-dim);
+  font-family: var(--font-mono);
+  white-space: normal;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  line-height: 16px;
+  word-break: break-all;
+}
+
+/* ------------------------------ 右键菜单 ------------------------------ */
+
+.result-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 168px;
+  padding: 4px;
+  background: var(--c-bg);
+  border: 1px solid var(--c-border-strong);
+  border-radius: 4px;
+  box-shadow: 0 6px 16px var(--c-border-strong);
+}
+
+.result-menu .menu-item {
+  display: block;
+  width: 100%;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--c-text);
+  font-size: var(--fs-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.result-menu .menu-item:hover {
+  background: var(--c-row-hover);
+}
+.result-menu .menu-item.danger {
+  color: var(--c-danger);
+}
+.result-menu .menu-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--c-border);
+}
+
+/* ============================================================
+   R3：分页条 / 列显隐 / 大小列 / 历史下拉 / 书签面板
+   （历史下拉与书签按钮样式随本文件全局生效）
+   ============================================================ */
+
+/* ------------------------------ 分页条 ------------------------------ */
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px;
+  border-top: 1px solid var(--c-border);
+  background: var(--c-bg-alt);
+  font-size: var(--fs-ui);
+  color: var(--c-text-dim);
+  white-space: nowrap;
+}
+
+.pager-btn {
+  padding: 2px 10px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: 3px;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-size: var(--fs-ui);
+  cursor: pointer;
+}
+.pager-btn:hover:not(:disabled) {
+  background: var(--c-row-hover);
+}
+.pager-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pager-partial {
+  color: var(--c-danger);
+}
+
+/* ------------------------------ 列显隐 ------------------------------ */
+
+.result-table thead th.th-cols {
+  width: 34px;
+  text-align: center;
+  position: relative;
+}
+.th-size {
+  width: 76px;
+}
+.result-table td.col-size {
+  width: 76px;
+  color: var(--c-text-dim);
+}
+
+.col-toggle-btn {
+  border: none;
+  background: transparent;
+  color: var(--c-text-dim);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.col-toggle-btn:hover {
+  color: var(--c-text);
+}
+
+.col-dropdown {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 950;
+  min-width: 108px;
+  padding: 4px;
+  background: var(--c-bg);
+  border: 1px solid var(--c-border-strong);
+  border-radius: 4px;
+  box-shadow: 0 6px 16px var(--c-border-strong);
+}
+.col-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  font-size: var(--fs-ui);
+  color: var(--c-text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.col-option:hover {
+  background: var(--c-row-hover);
+}
+
+/* ---------------------------- 历史下拉 ---------------------------- */
+
+.search-input-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.search-input-wrap .search-input {
+  flex: 1;
+  width: 100%;
+}
+
+.history-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 960;
+  padding: 4px;
+  background: var(--c-bg);
+  border: 1px solid var(--c-border-strong);
+  border-radius: 4px;
+  box-shadow: 0 6px 16px var(--c-border-strong);
+}
+.history-empty {
+  padding: 8px 10px;
+  color: var(--c-text-dim);
+  font-size: var(--fs-ui);
+}
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--c-text);
+  font-size: var(--fs-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.history-item:hover {
+  background: var(--c-row-hover);
+}
+.history-mode {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: 2px;
+  font-size: 10px;
+  color: var(--c-text-dim);
+}
+.history-query {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.history-meta {
+  flex: 0 0 auto;
+  color: var(--c-text-dim);
+  font-size: 11px;
+}
+.history-clear {
+  display: block;
+  width: 100%;
+  margin-top: 2px;
+  padding: 4px 8px;
+  border: none;
+  border-top: 1px solid var(--c-border);
+  border-radius: 0 0 3px 3px;
+  background: transparent;
+  color: var(--c-danger);
+  font-size: var(--fs-ui);
+  text-align: center;
+  cursor: pointer;
+}
+.history-clear:hover {
+  background: var(--c-row-hover);
+}
+
+/* ---------------------------- 书签按钮/面板 ---------------------------- */
+
+.filter-bookmark-btn {
+  padding: 2px 10px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: 3px;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-size: var(--fs-ui);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.filter-bookmark-btn:hover {
+  background: var(--c-row-hover);
+}
+
+.bookmark-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+}
+
+.bookmark-panel {
+  width: 520px;
+  max-width: calc(100vw - 48px);
+  max-height: 64vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--c-bg);
+  border: 1px solid var(--c-border-strong);
+  border-radius: 6px;
+  box-shadow: 0 10px 28px var(--c-border-strong);
+  overflow: hidden;
+}
+
+.bookmark-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--c-border);
+  font-weight: 600;
+}
+
+.bookmark-close {
+  border: none;
+  background: transparent;
+  color: var(--c-text-dim);
+  cursor: pointer;
+  font-size: 13px;
+}
+.bookmark-close:hover {
+  color: var(--c-text);
+}
+
+.bookmark-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px 8px;
+}
+.bookmark-empty,
+.bookmark-error {
+  padding: 16px 8px;
+  color: var(--c-text-dim);
+  text-align: center;
+}
+.bookmark-error {
+  color: var(--c-danger);
+}
+
+.bookmark-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px;
+  border-radius: 4px;
+}
+.bookmark-row:hover {
+  background: var(--c-row-hover);
+}
+.bookmark-text {
+  flex: 1;
+  min-width: 0;
+}
+.bookmark-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.bookmark-path {
+  color: var(--c-text-dim);
+  font-size: 11px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.bookmark-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+}
+.bookmark-actions button {
+  padding: 2px 10px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: 3px;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-size: var(--fs-ui);
+  cursor: pointer;
+}
+.bookmark-actions button:hover {
+  background: var(--c-row-hover);
+}
+.bookmark-actions button.danger {
+  color: var(--c-danger);
+  border-color: var(--c-danger);
+}

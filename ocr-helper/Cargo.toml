@@ -1,0 +1,25 @@
+[package]
+name = "ocr-helper"
+version = "0.1.0"
+edition = "2021"
+
+# 本包**独立成 workspace**（空 [workspace] 表使其脱离父 workspace）：
+#   oar-ocr 0.9.1 要求 rustc >= 1.95，主工程固定在 stable(1.93)；
+#   用 rust-toolchain.toml 做工具链隔离，主工程不受影响。
+[workspace]
+
+[[bin]]
+name = "ocr-helper"
+path = "src/main.rs"
+
+[dependencies]
+# auto-download：首次使用时从 ModelScope 拉取注册模型到 $OAR_HOME（默认 ~/.oar）
+# download-binaries：构建期获取 ONNX Runtime 动态库
+oar-ocr = { version = "=0.9.1", default-features = false, features = [
+    "auto-download",
+    "simd",
+    "download-binaries",
+] }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

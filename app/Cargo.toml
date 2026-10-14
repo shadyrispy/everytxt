@@ -1,0 +1,47 @@
+[package]
+name = "search-tool"
+version = "0.1.0"
+description = "everytxt —— 本地全文搜索引擎"
+authors = ["search-tool"]
+edition = "2021"
+
+[lib]
+name = "search_tool_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+stcore = { path = "../stcore" }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = "1"
+ignore = "0.4"
+rayon = "1"
+rusqlite = { version = "0.37", features = ["bundled"] }
+notify = "8"
+clap = { version = "4", features = ["derive"] }
+zip = { version = "4", default-features = false, features = ["deflate"] }
+
+# --- P0+ 子项 2：文件操作全家桶 ---
+open = "5"
+trash = "5"
+arboard = "3"
+fs_extra = "1"
+rust_xlsxwriter = "0.9"
+
+# --- P0+ 子项 3：索引管理（globset 规则/类型表；定时用 std::thread 不引 tokio） ---
+globset = "0.4"
+
+# --- P0+ 子项 5：应用外壳 ---
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-autostart = "2"
+
+[features]
+# 默认启用 Tauri 自定义协议（release 必需）
+custom-protocol = ["tauri/custom-protocol"]

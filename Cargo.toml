@@ -1,0 +1,52 @@
+[workspace]
+members = ["stcore", "app"]
+# ocr-helper 独立 workspace（oar-ocr 需 rustc ≥ 1.95，见其 rust-toolchain.toml）
+exclude = ["ocr-helper", "third_party"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+tantivy = "0.26.2"
+jieba-rs = "0.11"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[profile.release]
+opt-level = 2
+
+# chmlib 1.0.0 上游 bug：`OsStr::as_str()` 不存在（应为 `to_str()`），
+# Windows 目标编译失败（E0599，src/lib.rs:356，`#[cfg(not(unix))]` 分支）。
+# CHM 是 Windows 原生格式不能砍，vendored 一字修复，等上游发版后移除。
+#
+# unrar_sys 0.5.8 vendored RARLAB 新版源码的上游回归：头文件大小写。
+# os.hpp 写 <PowrProf.h> / <Wbemidl.h>，isnt.cpp 同；mingw-w64 只带小写
+# powrprof.h / wbemidl.h，大小写敏感 FS 下 ENOENT，连锁导致
+# 'SetSuspendState' was not declared（沙箱 mingw 交叉编译实证）。
+# MSVC 文件系统大小写不敏感故上游未暴露。vendored 三处改小写，
+# 等上游发版后移除。
+# 另修 build.rs host/target 混淆：#[cfg(windows)]（host 语义）致交叉编译
+# （Linux→Windows）漏编 isnt.cpp（WinNT()/IsWindows11OrGreater() 定义处）
+# 与 -lpowrprof/shell32 标志 → 链接期 undefined。改按 CARGO_CFG_WINDOWS
+# （cargo 按 target 注入）判断；原生 Windows 构建行为不变。
+#
+# chmlib-sys 1.0.0 上游 mingw bug：ffs 回退仅在 `#elif defined(WIN32)`
+# （MSVC）分支提供，mingw-gcc 同时满足 __GNUC__ 与 WIN32 → 两侧均不提供，
+# 链接期 undefined reference to `ffs`（沙箱 mingw 交叉链接实证）。
+# vendored 改守卫为 `__GNUC__ && !WIN32`；Linux/MSVC 行为均不变。
+#
+# chmlib-sys 另两处 Windows 原生（MSVC）构建修复（CI windows-latest 实证）：
+# 1) build.rs canonicalize() 在 Windows 返回 `\\?\` 扩展长度路径前缀，
+#    cl.exe 无法打开（C1083 Cannot open source file）→ 去掉，
+#    CARGO_MANIFEST_DIR 本身即绝对路径；
+# 2) MSVC 只预定义 `_WIN32` 不定义 `WIN32`，CHMLib Windows 分支挂
+#    `#ifdef WIN32`，宏缺失落入 POSIX 分支 include <unistd.h>（C1083）
+#    → build.rs 仅对 msvc 目标补 -DWIN32=1（MinGW gcc 已预定义 WIN32，
+#    -dM 实证；Linux/macOS 不受影响）。
+[patch.crates-io]
+chmlib = { path = "third_party/chmlib-patched" }
+chmlib-sys = { path = "third_party/chmlib-sys-patched" }
+unrar_sys = { path = "third_party/unrar-sys-patched" }

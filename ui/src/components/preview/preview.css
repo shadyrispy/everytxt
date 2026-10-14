@@ -1,0 +1,505 @@
+/* components/preview 样式（子项 4 所有权）
+   令牌一律取自 base.css 的 --c-* / --font-*；行高由 PreviewPane.tsx 派生的
+   --preview-line-h（默认 18px）统一注入，虚拟化基准/行高/占位 div 三者一致。 */
+
+.preview-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--c-border);
+  background: var(--c-bg);
+}
+
+/* ------------------------------ ① Tab 栏 ------------------------------ */
+.preview-tabs {
+  flex: 0 0 auto;
+  background: var(--c-bg-alt);
+  border-bottom: 1px solid var(--c-border);
+  overflow: hidden;
+}
+.preview-tabs-scroll {
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.preview-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  max-width: 200px;
+  padding: 4px 8px;
+  border: none;
+  border-right: 1px solid var(--c-border);
+  background: transparent;
+  color: var(--c-text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: var(--fs-ui);
+}
+.preview-tab:hover {
+  background: var(--c-row-hover);
+}
+.preview-tab.active {
+  background: var(--c-bg);
+  color: var(--c-text);
+  box-shadow: inset 0 -2px 0 var(--c-accent);
+}
+.preview-tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.preview-tab-close {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  font-size: 11px;
+  border-radius: 3px;
+}
+.preview-tab-close:hover {
+  color: var(--c-danger);
+}
+
+/* 截断提示条 */
+.preview-notice {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  background: var(--c-accent-soft);
+  border-bottom: 1px solid var(--c-border);
+  color: var(--c-text);
+  font-size: var(--fs-ui);
+}
+
+/* --------------------------- ② 正文 + ③ minimap --------------------------- */
+.preview-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.preview-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto;
+  background: var(--c-bg);
+  font-family: var(--font-mono);
+  font-size: var(--preview-font-size, var(--fs-mono));
+  line-height: var(--preview-line-h, 18px);
+}
+
+.preview-line {
+  display: flex;
+  height: var(--preview-line-h, 18px);
+  line-height: var(--preview-line-h, 18px);
+  font-size: var(--preview-font-size, var(--fs-mono));
+  white-space: pre;
+}
+.preview-line.active {
+  background: var(--c-row-sel);
+}
+/* 行号槽关闭：正文左移对齐 */
+.preview-body.no-lineno .preview-linetext {
+  padding-left: 8px;
+}
+/* 自动换行：逻辑行可撑高，虚拟化按 line-h 近似 */
+.preview-body.wrap .preview-line {
+  height: auto;
+  min-height: var(--preview-line-h, 18px);
+}
+.preview-body.wrap .preview-linetext {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.preview-lineno {
+  flex: 0 0 auto;
+  width: 56px;
+  padding-right: 10px;
+  margin-right: 10px;
+  text-align: right;
+  color: var(--c-text-dim);
+  border-right: 1px solid var(--c-border);
+  user-select: none;
+}
+.preview-linetext {
+  flex: 0 0 auto;
+  white-space: pre;
+}
+
+.preview-linetext mark {
+  background: var(--c-mark);
+  color: var(--c-text);
+  border-radius: 2px;
+  padding: 0;
+}
+.preview-linetext mark.match-current {
+  background: var(--c-accent);
+  color: #fff;
+}
+
+/* minimap 窄条 */
+.minimap {
+  flex: 0 0 12px;
+  width: 12px;
+  height: 100%;
+  background: var(--c-bg-sunken);
+  border-left: 1px solid var(--c-border);
+  cursor: pointer;
+}
+.minimap-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ----------------------------- ④ 查找栏 ----------------------------- */
+.preview-findbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  background: var(--c-bg-alt);
+  border-top: 1px solid var(--c-border);
+  border-bottom: 1px solid var(--c-border);
+}
+.preview-find-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: 3px;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-size: var(--fs-ui);
+}
+.find-toggle,
+.find-nav {
+  flex: 0 0 auto;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: 3px;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-size: var(--fs-ui);
+  cursor: pointer;
+}
+.find-toggle:hover,
+.find-nav:hover {
+  background: var(--c-row-hover);
+}
+.find-toggle.on {
+  background: var(--c-accent);
+  border-color: var(--c-accent);
+  color: #fff;
+}
+.find-count {
+  flex: 0 0 auto;
+  min-width: 46px;
+  text-align: center;
+  color: var(--c-text-dim);
+}
+
+/* ----------------------- ⑤ 匹配列表 / 文件信息 / 词组统计 ----------------------- */
+.preview-panel {
+  flex: 0 0 34%;
+  min-height: 72px;
+  overflow: auto;
+  background: var(--c-bg);
+  border-bottom: 1px solid var(--c-border);
+}
+
+.preview-empty {
+  padding: 10px;
+  color: var(--c-text-dim);
+}
+
+.match-group-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  background: var(--c-bg-alt);
+  border-bottom: 1px solid var(--c-border);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: var(--fs-ui);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.match-group-head:hover {
+  background: var(--c-row-hover);
+}
+.match-caret {
+  color: var(--c-text-dim);
+}
+.match-count {
+  color: var(--c-text-dim);
+  font-weight: 400;
+}
+
+.match-item {
+  display: flex;
+  gap: 8px;
+  padding: 1px 6px 1px 16px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: var(--fs-ui);
+}
+.match-item:hover {
+  background: var(--c-row-hover);
+}
+.match-item.active {
+  background: var(--c-row-sel);
+}
+.match-item-no {
+  flex: 0 0 34px;
+  text-align: right;
+  color: var(--c-text-dim);
+}
+.match-item-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.match-item-text mark {
+  background: var(--c-mark);
+  color: var(--c-text);
+  border-radius: 2px;
+}
+
+.info-panel {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-ui);
+}
+.info-panel th {
+  width: 72px;
+  padding: 3px 8px;
+  text-align: left;
+  vertical-align: top;
+  font-weight: 400;
+  color: var(--c-text-dim);
+}
+.info-panel td {
+  padding: 3px 8px;
+  word-break: break-all;
+}
+
+.stat-row {
+  display: flex;
+  align-items: center;
+  padding: 1px 8px;
+  font-size: var(--fs-ui);
+}
+.stat-row:hover {
+  background: var(--c-row-hover);
+}
+.stat-no {
+  flex: 0 0 52px;
+  text-align: right;
+  color: var(--c-text-dim);
+}
+.stat-word {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stat-count {
+  flex: 0 0 64px;
+  text-align: right;
+  color: var(--c-accent);
+}
+
+/* 词组统计筛选档 */
+.stat-filter {
+  display: flex;
+  gap: 4px;
+  padding: 4px 6px;
+  background: var(--c-bg-alt);
+  border-bottom: 1px solid var(--c-border);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.stat-filter-btn {
+  padding: 1px 10px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: 3px;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-size: var(--fs-ui);
+  cursor: pointer;
+}
+.stat-filter-btn:hover {
+  background: var(--c-row-hover);
+}
+.stat-filter-btn.on {
+  background: var(--c-accent);
+  border-color: var(--c-accent);
+  color: #fff;
+}
+
+/* ---------------------------- ⑥ 底部三 Tab ---------------------------- */
+.preview-bottomtabs {
+  flex: 0 0 auto;
+  display: flex;
+  background: var(--c-bg-alt);
+  border-top: 1px solid var(--c-border);
+}
+.preview-bottomtab {
+  padding: 4px 14px;
+  border: none;
+  border-right: 1px solid var(--c-border);
+  background: transparent;
+  color: var(--c-text-dim);
+  font-size: var(--fs-ui);
+  cursor: pointer;
+}
+.preview-bottomtab:hover {
+  background: var(--c-row-hover);
+}
+.preview-bottomtab.active {
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-weight: 600;
+  box-shadow: inset 0 2px 0 var(--c-accent);
+}
+
+/* ---------------- P3-B：PDF 页视图 ---------------- */
+.pdf-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.pdf-view-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--c-border, #d0d0d0);
+  font-size: 12px;
+  flex: 0 0 auto;
+}
+.pdf-view-nav {
+  padding: 2px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid var(--c-border, #c8c8c8);
+  border-radius: 3px;
+  background: var(--c-surface, #f7f7f7);
+  color: inherit;
+}
+.pdf-view-nav:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.pdf-view-page {
+  font-variant-numeric: tabular-nums;
+}
+.pdf-view-hits {
+  margin-left: auto;
+  color: var(--c-accent, #b8860b);
+}
+.pdf-view-canvas {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px;
+  background: #6e6e6e;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+.pdf-view-pagewrap {
+  position: relative;
+  line-height: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.pdf-view-img {
+  display: block;
+  max-width: 100%;
+  background: #fff;
+}
+.pdf-hit-box {
+  position: absolute;
+  background: rgba(255, 214, 0, 0.35);
+  border: 1px solid rgba(210, 160, 0, 0.9);
+  pointer-events: none;
+  box-sizing: border-box;
+}
+.pdf-view-note {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--c-muted, #666);
+}
+
+/* ---------------- P4-D：OOXML 文档视图（Canvas 渲染 + 命中高亮） ---------------- */
+.ooxml-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.ooxml-view-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--c-border, #d0d0d0);
+  font-size: 12px;
+  flex: 0 0 auto;
+}
+.ooxml-view-kind {
+  font-weight: 600;
+}
+.ooxml-view-hint {
+  color: var(--c-accent, #b8860b);
+}
+.ooxml-view-spacer {
+  flex: 1 1 auto;
+}
+.ooxml-view-nav {
+  padding: 2px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid var(--c-border, #c8c8c8);
+  border-radius: 3px;
+  background: var(--c-surface, #f7f7f7);
+  color: inherit;
+}
+.ooxml-view-nav:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.ooxml-view-canvas {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  background: #6e6e6e;
+  padding: 8px;
+}
+.ooxml-view-canvas canvas {
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}

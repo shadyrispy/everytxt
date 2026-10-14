@@ -1,0 +1,31 @@
+# Rust build artifacts
+/target
+**/target
+
+# 第三方二进制（scripts/fetch-binaries.sh 获取，勿提交）
+third_party/pdfium/lib/*.so
+third_party/pdfium/lib/*.dll
+third_party/pdfium/PDFIUM-VERSION.txt
+third_party/ocr-models/*.onnx
+third_party/ocr-models/ppocrv6_tiny_dict.txt
+
+# Node
+node_modules/
+ui/node_modules/
+ui/dist/
+
+# OS / editor
+.DS_Store
+*.swp
+*~
+
+# Env / secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Logs / temp
+*.log
+*.tmp
+nohup.out

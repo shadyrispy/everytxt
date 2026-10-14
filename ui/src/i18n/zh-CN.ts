@@ -1,0 +1,79 @@
+/**
+ * 简体中文资源（源语言）。key 命名 `组件.区块.条目`；与 en-US.ts 严格同 key。
+ */
+const zhCN: Record<string, string> = {
+  /* MenuBar */
+  'menu.menubar': '菜单栏',
+  'menu.file': '文件(F)',
+  'menu.file.export': '导出结果',
+  'menu.file.exit': '退出',
+  'menu.edit': '编辑(E)',
+  'menu.edit.copyPath': '复制路径',
+  'menu.edit.copyName': '复制名称',
+  'menu.edit.selectAll': '全选结果',
+  'menu.edit.findInDoc': '文档内查找',
+  'menu.view': '查看(V)',
+  'menu.view.themeLight': '浅色皮肤',
+  'menu.view.themeDark': '深色皮肤',
+  'menu.view.themeSystem': '跟随系统',
+  'menu.view.prevPage': '上一个结果',
+  'menu.view.nextPage': '下一个结果',
+  'menu.view.lineNumbers': '显示行号',
+  'menu.view.wrap': '自动换行',
+  'menu.view.zoomIn': '放大',
+  'menu.view.zoomOut': '缩小',
+  'menu.view.zoomReset': '重置字号',
+  'menu.settings': '设置(O)',
+  'menu.settings.options': '选项…',
+  'menu.settings.indexAdmin': '索引管理…',
+  'menu.help': '帮助(H)',
+  'menu.help.syntax': '高级搜索语法速查',
+  'menu.help.homepage': '项目主页',
+  'menu.help.about': '关于 search-tool',
+
+  /* MenuBar：高级搜索语法速查面板 */
+  'syntax.title': '高级搜索语法',
+  'syntax.header.op': '语法',
+  'syntax.header.meaning': '含义',
+  'syntax.header.example': '示例说明',
+  'syntax.and.name': '与',
+  'syntax.and.desc': '同时包含左右两侧关键词，如：error & timeout',
+  'syntax.or.name': '或',
+  'syntax.or.desc': '包含任意一侧关键词，如：cat | dog',
+  'syntax.not.name': '非',
+  'syntax.not.desc': '排除右侧关键词，如：report !draft',
+  'syntax.group.name': '分组',
+  'syntax.group.desc': '对子表达式分组，如：(a|b) & c',
+  'syntax.exact.name': '精确',
+  'syntax.exact.desc': '精确短语匹配，如："中华人民共和国"',
+  'syntax.hint': '语法可在搜索模式切到「高级」后使用；多个词默认按「与」处理。',
+
+  /* StatusBar（文案在 App.tsx 组合，key 预留给集成方） */
+  'status.searching': '正在搜索…',
+  'status.ready': '就绪',
+  'status.results': '返回 {1} 个结果，耗时 {2} 秒，搜索完成。',
+  'status.indexDocs': '{1} 篇 · {2}',
+  'status.indexUnavailable': '索引不可用，请重建',
+  'status.indexLoading': '索引加载中…',
+
+  /* WelcomePage */
+  'welcome.title': '欢迎使用',
+  'welcome.steps.title': '搜索步骤',
+  'welcome.step1': '在左边搜索框内输入想要搜索的任意关键词；',
+  'welcome.step2': '点击左边的「开始」按钮，或者按回车，搜索结果将会立刻呈现；',
+  'welcome.step3': '点击搜索结果中的条目，右侧将生成该文件的预览；',
+  'welcome.step4': '点击上方的「+」按钮，还可以按目录与文件类型过滤结果。',
+  'welcome.tips.title': '使用技巧',
+  'welcome.tip1': '右击任意目录选择「用 search-tool 搜索」，可以快速按该目录搜索；',
+  'welcome.tip2': '开启托盘与全局热键，随时唤起主窗口进行搜索；',
+  'welcome.tip3': '搜索结果列表鼠标悬停 1 秒，可快速预览命中的文字片段；',
+  'welcome.tip4': '在「设置 → 快捷键」中可自定义唤醒等操作的加速键。',
+  'welcome.more': '……更多实用、高效的功能等待你的探索。',
+  'welcome.about.title': '关于 everytxt',
+  'welcome.about.body1': 'everytxt 是一款本地全文搜索引擎：安全、无广告、无数据外泄，请放心使用。',
+  'welcome.about.body2':
+    'everytxt 免费且开源：索引与检索均在本地完成，文档内容不会离开你的电脑。欢迎通过菜单「帮助」提出意见和建议。',
+  'welcome.openHomepage': '访问项目主页',
+}
+
+export default zhCN

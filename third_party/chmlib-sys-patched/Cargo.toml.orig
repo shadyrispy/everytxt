@@ -1,0 +1,17 @@
+[package]
+name = "chmlib-sys"
+version = "1.0.0"
+authors = ["Michael Bryan <michaelfbryan@gmail.com>"]
+edition = "2018"
+links = "chmlib"
+description = "Raw bindings to the CHMLib C library"
+license = "LGPL-2.1-or-later"
+repository = "https://github.com/Michael-F-Bryan/chmlib"
+build = "build.rs"
+categories = ["external-ffi-bindings"]
+keywords = ["CHM", "help", "chmlib"]
+
+[dependencies]
+
+[build-dependencies]
+cc = { version = "1.0" }

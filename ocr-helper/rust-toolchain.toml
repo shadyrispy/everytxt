@@ -1,0 +1,4 @@
+[toolchain]
+# oar-ocr 0.9.1 / oar-ocr-core 0.9.2 要求 rustc >= 1.95（主工程 stable 1.93 无法编译）
+channel = "1.95"
+components = ["rustfmt", "clippy"]

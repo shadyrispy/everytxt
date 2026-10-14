@@ -1,0 +1,521 @@
+//! 应用外壳命令（子项 5 所有权：应用外壳）
+//!
+//! 契约：ui/src/api/shell.ts
+//! 职责：皮肤三态 / 开机启动 / 全局热键 / 主窗口显隐 / CLI 单实例 socket 查询转发
+//!
+//! 配置持久化：`<index_dir>/app.json`（与 stcore::config 的 config.json 分离，避免耦合）
+
+use std::path::PathBuf;
+
+use serde::{Deserialize, Serialize};
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Manager, State};
+use tauri_plugin_autostart::ManagerExt as _;
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+
+use crate::state::AppState;
+
+pub const APP_CONFIG_FILE: &str = "app.json";
+/// Unix socket 文件名（位于 index_dir 下）
+pub const SOCKET_FILE: &str = "search-tool.sock";
+
+/* ------------------------------- 配置类型 ------------------------------- */
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ThemeMode {
+    Light,
+    Dark,
+    #[default]
+    System,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HotkeyBinding {
+    pub action: String,
+    pub label: String,
+    pub accel: String,
+}
+
+/// 适合注册为**系统级全局热键**的 action 白名单。
+///
+/// 全局热键会劫持**整个系统**的按键：`Ctrl+A` / `Enter` / `Ctrl+S` 这类
+/// 通用编辑键若全局注册，用户在浏览器、编辑器里按键会被本应用截获（P2 审计）。
+/// 故只有下面这些 action 真正全局注册；其余条目是**窗口内快捷键**
+/// （由前端 `keydown` 处理，accel 仅作键位来源与展示）。
+pub const GLOBAL_HOTKEY_ACTIONS: &[&str] = &["showWindow"];
+
+/// 默认热键表
+///
+/// 仅 `showWindow` 为系统级全局热键（见 [`GLOBAL_HOTKEY_ACTIONS`]）；
+/// 其余为窗口内快捷键，全局注册会劫持其他应用。
+pub fn default_hotkeys() -> Vec<HotkeyBinding> {
+    let mk = |action: &str, label: &str, accel: &str| HotkeyBinding {
+        action: action.to_string(),
+        label: label.to_string(),
+        accel: accel.to_string(),
+    };
+    vec![
+        mk("showWindow", "显示/隐藏主窗口（全局）", "Ctrl+Shift+Space"),
+        mk("focusSearch", "聚焦搜索框（窗口内）", "Ctrl+L"),
+        mk("exportResults", "导出结果为 xlsx（窗口内）", "Ctrl+S"),
+        mk("findInDoc", "文档内查找（窗口内）", "Ctrl+F"),
+        mk("nextResult", "下一个结果（窗口内）", "F3"),
+        mk("prevResult", "上一个结果（窗口内）", "Shift+F3"),
+        mk("selectAll", "全选结果（窗口内）", "Ctrl+A"),
+        mk("toggleTheme", "切换皮肤（窗口内）", "Ctrl+Shift+T"),
+        mk("openIndexAdmin", "打开索引管理（窗口内）", "Ctrl+I"),
+        mk("openFile", "打开选中文件（窗口内）", "Enter"),
+        mk("revealInFolder", "定位到文件（窗口内）", "Ctrl+Enter"),
+    ]
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppConfig {
+    #[serde(default)]
+    pub theme: ThemeMode,
+    #[serde(default = "default_language")]
+    pub language: String,
+    #[serde(default)]
+    pub autostart: bool,
+    #[serde(default)]
+    pub close_to_tray: bool,
+    /// 右击目录搜索（shell 集成）开关状态（P5）
+    #[serde(default)]
+    pub right_click_search: bool,
+    #[serde(default = "default_hotkeys")]
+    pub hotkeys: Vec<HotkeyBinding>,
+}
+
+fn default_language() -> String {
+    "zh-CN".to_string()
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            theme: ThemeMode::default(),
+            language: default_language(),
+            autostart: false,
+            close_to_tray: false,
+            right_click_search: false,
+            hotkeys: default_hotkeys(),
+        }
+    }
+}
+
+impl AppConfig {
+    fn path_in(index_dir: &std::path::Path) -> PathBuf {
+        index_dir.join(APP_CONFIG_FILE)
+    }
+
+    pub fn load(index_dir: &std::path::Path) -> Self {
+        let p = Self::path_in(index_dir);
+        std::fs::read_to_string(&p)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+
+    pub fn save(&self, index_dir: &std::path::Path) -> anyhow::Result<()> {
+        std::fs::create_dir_all(index_dir)?;
+        let p = Self::path_in(index_dir);
+        let tmp = p.with_extension("json.tmp");
+        std::fs::write(&tmp, serde_json::to_string_pretty(self)?)?;
+        std::fs::rename(&tmp, &p)?;
+        Ok(())
+    }
+}
+
+/* -------------------------------- 命令 -------------------------------- */
+
+#[tauri::command]
+pub fn get_app_config(state: State<'_, AppState>) -> Result<AppConfig, String> {
+    Ok(AppConfig::load(&state.index_dir()))
+}
+
+#[tauri::command]
+pub fn set_app_config(cfg: AppConfig, state: State<'_, AppState>) -> Result<(), String> {
+    cfg.save(&state.index_dir()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_theme(theme: ThemeMode, state: State<'_, AppState>) -> Result<(), String> {
+    let mut cfg = AppConfig::load(&state.index_dir());
+    cfg.theme = theme;
+    cfg.save(&state.index_dir()).map_err(|e| e.to_string())
+}
+
+/// 开机启动开关（三平台经 tauri-plugin-autostart）
+#[tauri::command]
+pub fn set_autostart(
+    enabled: bool,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let al = app.autolaunch();
+    let r = if enabled { al.enable() } else { al.disable() };
+    r.map_err(|e| e.to_string())?;
+    let mut cfg = AppConfig::load(&state.index_dir());
+    cfg.autostart = enabled;
+    cfg.save(&state.index_dir()).map_err(|e| e.to_string())
+}
+
+/// 把 accel 列表按位置写回配置的 hotkeys（keep label/action，只更新 accel）
+fn write_accels_to_cfg(cfg: &mut AppConfig, accels: &[String]) {
+    for (i, a) in accels.iter().enumerate() {
+        if let Some(hk) = cfg.hotkeys.get_mut(i) {
+            hk.accel = a.clone();
+        }
+    }
+}
+
+/// 依据 (action, accel) 列表注册**系统级全局热键**（唤醒主窗口）。
+///
+/// 语义（P2 修复，替代旧 all-or-nothing）：
+///   1. 先 `unregister_all()` 清空旧绑定（含启动时注册的）；
+///   2. 只注册 [`GLOBAL_HOTKEY_ACTIONS`] 白名单内的 action（其余是窗口内快捷键，
+///      全局注册会劫持其它应用的 Ctrl+A/Enter 等按键）；
+///   3. **逐键独立**注册；单个键失败（被占用/非法）只跳过该键并告警，
+///      不回滚已成功项（旧实现一键冲突即全套热键静默失效）。
+///
+/// 返回被跳过的键列表（空 = 全部生效），供调用方提示用户。
+pub fn register_hotkeys(app: &AppHandle, bindings: &[(String, String)]) -> Vec<String> {
+    let gs = app.global_shortcut();
+    if let Err(e) = gs.unregister_all() {
+        eprintln!("清空旧热键失败: {e}");
+    }
+
+    let mut skipped: Vec<String> = Vec::new();
+    for (action, accel) in bindings {
+        if !GLOBAL_HOTKEY_ACTIONS.contains(&action.as_str()) {
+            continue;
+        }
+        let accel = accel.trim();
+        if accel.is_empty() {
+            continue;
+        }
+        let handle = app.clone();
+        // 解析（如 "Ctrl+Shift+Space" / "F3"）失败或已被占用都会返回 Err
+        let r = gs.on_shortcut(accel, move |_app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                if let Some(w) = handle.get_webview_window("main") {
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                }
+            }
+        });
+        if let Err(e) = r {
+            eprintln!("热键 `{accel}` 注册失败（可能被占用或格式非法）：{e}，该键已跳过");
+            skipped.push(accel.to_string());
+        }
+    }
+    skipped
+}
+
+/// 启动时从配置恢复全局热键（失败仅告警，不阻塞 GUI）
+pub fn register_hotkeys_from_config(app: &AppHandle) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let cfg = AppConfig::load(&state.index_dir());
+    let bindings: Vec<(String, String)> = cfg
+        .hotkeys
+        .iter()
+        .map(|h| (h.action.clone(), h.accel.clone()))
+        .collect();
+    let skipped = register_hotkeys(app, &bindings);
+    if !skipped.is_empty() {
+        eprintln!("以下全局热键未生效（不影响 GUI）: {}", skipped.join(", "));
+    }
+}
+
+/// 注册全局热键（前端设置页保存时调用）
+///
+/// 部分键失败时配置仍写入，但返回 Err 携带未生效键列表 → 前端可提示"部分生效"。
+#[tauri::command]
+pub fn apply_global_hotkeys(
+    accels: Vec<String>,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mut cfg = AppConfig::load(&state.index_dir());
+    // accels 与 cfg.hotkeys 按位置对应（前端整表提交，顺序即 action 顺序）
+    let bindings: Vec<(String, String)> = accels
+        .iter()
+        .enumerate()
+        .map(|(i, a)| {
+            (
+                cfg.hotkeys
+                    .get(i)
+                    .map(|h| h.action.clone())
+                    .unwrap_or_default(),
+                a.clone(),
+            )
+        })
+        .collect();
+    let skipped = register_hotkeys(&app, &bindings);
+    write_accels_to_cfg(&mut cfg, &accels);
+    cfg.save(&state.index_dir()).map_err(|e| e.to_string())?;
+    if skipped.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "以下热键未生效（可能被占用）: {}",
+            skipped.join(", ")
+        ))
+    }
+}
+
+#[tauri::command]
+pub fn show_main_window(app: AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("main") {
+        w.show().map_err(|e| e.to_string())?;
+        w.set_focus().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn hide_main_window(app: AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("main") {
+        w.hide().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/* ------------------------------- 系统托盘 ------------------------------- */
+
+/// 托盘菜单项 id
+const TRAY_SHOW: &str = "tray_show";
+const TRAY_HIDE: &str = "tray_hide";
+const TRAY_QUIT: &str = "tray_quit";
+
+/// 创建系统托盘（任务卡 5.3）：菜单 `显示主窗口 / 隐藏 / 退出`；
+/// 左键单击托盘图标显示主窗口。图标取应用默认窗口图标。
+pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
+    let show = MenuItem::with_id(app, TRAY_SHOW, "显示主窗口", true, None::<&str>)?;
+    let hide = MenuItem::with_id(app, TRAY_HIDE, "隐藏", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, TRAY_QUIT, "退出", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &hide, &quit])?;
+
+    let mut builder = TrayIconBuilder::new()
+        .tooltip("search-tool 全文搜索")
+        .menu(&menu)
+        // 左键单击只显示主窗口，不弹出菜单
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            TRAY_SHOW => {
+                let _ = show_main_window(app.clone());
+            }
+            TRAY_HIDE => {
+                let _ = hide_main_window(app.clone());
+            }
+            TRAY_QUIT => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            // 左键抬起 → 显示并聚焦主窗口
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                let _ = show_main_window(tray.app_handle().clone());
+            }
+        });
+
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+    builder.build(app)?;
+    Ok(())
+}
+
+/// 窗口关闭行为：`AppConfig.close_to_tray` 为 true 时拦截 `CloseRequested` → `hide()` 而非退出。
+///
+/// 每次关闭都实时读盘，保证设置页切换「关闭到托盘」后无需重启即生效。
+pub fn setup_close_to_tray(app: &AppHandle) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let handle = app.clone();
+    window.on_window_event(move |event| {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            let close_to_tray = handle
+                .try_state::<AppState>()
+                .map(|s| AppConfig::load(&s.index_dir()).close_to_tray)
+                .unwrap_or(false);
+            if close_to_tray {
+                api.prevent_close();
+                if let Some(w) = handle.get_webview_window("main") {
+                    let _ = w.hide();
+                }
+            }
+        }
+    });
+}
+
+/* ------------------------- CLI 单实例 socket 转发 ------------------------- */
+
+/// 启动前清除旧 socket 文件
+pub fn socket_path(index_dir: &std::path::Path) -> PathBuf {
+    index_dir.join(SOCKET_FILE)
+}
+
+/// 主实例监听 Unix socket：CLI 二启时把查询转发给本实例执行，避免双开索引。
+///
+/// 协议 v2（R5）：JSON 行 `{op:"search"|"stats", ...}` → 一行 JSON 响应 `{"ok":...}`；
+///   - `op:"search"`：emit `external-search` {query,drive,ext} 到主窗口 + show/set_focus，
+///     前端由 `ui/src/components/shell/ExternalSearchListener.tsx` 接收（CLI /s 唤起）。
+///
+/// 旧协议（R2）保留兼容：一行 `<mode>\t<query>\n` → `<count>\n` + `<hits>\t<path>\t<title>` 行。
+///
+/// TODO(子项5)：补 Windows 命名管道分支；补鉴权（只允许同用户）。
+#[cfg(unix)]
+pub fn setup_single_instance_socket(app: &AppHandle) -> anyhow::Result<()> {
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::net::UnixListener;
+
+    let state = app.state::<AppState>();
+    let path = socket_path(&state.index_dir());
+    // 先探测：若已有实例在监听，本实例不接管 socket
+    // （旧实现无条件 remove_file 会让对方监听孤儿化并造成双开）
+    if std::os::unix::net::UnixStream::connect(&path).is_ok() {
+        eprintln!(
+            "检测到已有实例的 socket（{}），本实例不重复监听",
+            path.display()
+        );
+        return Ok(());
+    }
+    if path.exists() {
+        // 无监听者的残留文件才清理
+        let _ = std::fs::remove_file(&path);
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let listener = UnixListener::bind(&path)?;
+    let handle = app.clone();
+
+    std::thread::spawn(move || {
+        for conn in listener.incoming() {
+            let Ok(stream) = conn else { continue };
+            let app = handle.clone();
+            std::thread::spawn(move || {
+                let mut w = match stream.try_clone() {
+                    Ok(w) => w,
+                    Err(_) => return,
+                };
+                let mut line = String::new();
+                let mut reader = BufReader::new(stream);
+                if reader.read_line(&mut line).is_err() {
+                    return;
+                }
+                let line = line.trim();
+                // R5：JSON 行协议分支（旧制表协议保留兼容）
+                if line.starts_with('{') {
+                    handle_socket_op(&app, line, &mut w);
+                    return;
+                }
+                let mut parts = line.splitn(2, '\t');
+                let mode = parts.next().unwrap_or("fuzzy");
+                let query = parts.next().unwrap_or("").to_string();
+                let mode = match mode {
+                    "exact" => stcore::search::SearchMode::Exact,
+                    "dsl" => stcore::search::SearchMode::Dsl,
+                    _ => stcore::search::SearchMode::Fuzzy,
+                };
+                let st = app.state::<AppState>();
+                let filter = stcore::search::SearchFilter::default();
+                let hits = st
+                    .with_mgr(|mgr| stcore::search::search(mgr, &query, mode, false, 50, &filter))
+                    .unwrap_or_default();
+                let _ = writeln!(w, "{}", hits.len());
+                for h in hits {
+                    let _ = writeln!(w, "{}\t{}\t{}", h.hits, h.path, h.title);
+                }
+            });
+        }
+    });
+
+    Ok(())
+}
+
+/// 非 Unix 平台占位（Windows 走命名管道，见 TODO）
+#[cfg(not(unix))]
+pub fn setup_single_instance_socket(_app: &AppHandle) -> anyhow::Result<()> {
+    Ok(())
+}
+
+/* --------------------- R5：socket JSON 行协议（op 分派） --------------------- */
+
+/// CLI `/s` 转发请求体（serde 默认宽容：缺字段为 None）
+#[cfg(unix)]
+#[derive(Debug, serde::Deserialize)]
+struct SocketOp {
+    op: String,
+    #[serde(default)]
+    query: Option<String>,
+    #[serde(default)]
+    drive: Option<String>,
+    #[serde(default)]
+    ext: Option<String>,
+}
+
+/// emit 到主窗口的负载；前端 ExternalSearchListener 接收
+#[cfg(unix)]
+#[derive(Debug, Clone, serde::Serialize)]
+struct ExternalSearchPayload {
+    query: String,
+    /// 目录前缀（CLI `/d` 盘符归一化后；None = 全库）
+    drive: Option<String>,
+    /// 扩展名（不带点；None = 全部类型）
+    ext: Option<String>,
+}
+
+/// 分派 JSON 行协议：op=search → 呈现转发；op=stats → 文档数。
+/// 任何错误都以 `{"ok":false,"error":...}` 行响应（客户端据此回退本地）。
+#[cfg(unix)]
+fn handle_socket_op(app: &AppHandle, line: &str, mut w: impl std::io::Write) {
+    let resp = match serde_json::from_str::<SocketOp>(line) {
+        Ok(op) => match op.op.as_str() {
+            "search" => {
+                let payload = ExternalSearchPayload {
+                    query: op.query.unwrap_or_default(),
+                    drive: op.drive,
+                    ext: op.ext,
+                };
+                if payload.query.trim().is_empty() {
+                    serde_json::json!({"ok": false, "error": "空查询"}).to_string()
+                } else {
+                    {
+                        use tauri::Emitter as _;
+                        if let Some(win) = app.get_webview_window("main") {
+                            let _ = win.show();
+                            let _ = win.set_focus();
+                        }
+                        let _ = app.emit("external-search", payload);
+                    }
+                    serde_json::json!({"ok": true}).to_string()
+                }
+            }
+            "stats" => {
+                let st = app.state::<AppState>();
+                let docs = st.with_mgr(|mgr| Ok(mgr.num_docs())).unwrap_or(0);
+                serde_json::json!({"ok": true, "docs": docs}).to_string()
+            }
+            other => {
+                serde_json::json!({"ok": false, "error": format!("未知 op: {other}")}).to_string()
+            }
+        },
+        Err(e) => {
+            serde_json::json!({"ok": false, "error": format!("解析请求失败: {e}")}).to_string()
+        }
+    };
+    let _ = writeln!(w, "{resp}");
+}

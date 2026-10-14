@@ -1,0 +1,422 @@
+/* ============================================================
+   应用外壳样式（子项 5 所有权）
+   菜单栏 / 工具栏 / 状态栏 / 欢迎页 / 设置对话框 / 主题提供器
+   约定：颜色一律取 base.css 的 --c-* 令牌，禁止硬编码色值；
+        高度取 --h-menu / --h-toolbar / --h-status。
+   ============================================================ */
+
+/* ------------------------------ 菜单栏 ------------------------------ */
+
+.menubar {
+  display: flex;
+  align-items: stretch;
+  height: var(--h-menu);
+  background: var(--c-bg-alt);
+  border-bottom: 1px solid var(--c-border);
+  padding: 0 2px;
+  position: relative;
+  z-index: 40;
+  flex: 0 0 auto;
+}
+
+.menu {
+  position: relative;
+  display: flex;
+}
+
+.menu-title {
+  height: 100%;
+  padding: 0 10px;
+  border: none;
+  background: transparent;
+  color: var(--c-text);
+  font-size: var(--fs-ui);
+  font-family: var(--font-ui);
+  cursor: default;
+  white-space: nowrap;
+}
+.menu-title:hover {
+  background: var(--c-row-hover);
+}
+.menu-title.active {
+  background: var(--c-accent-soft);
+  color: var(--c-accent);
+}
+
+.menu-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 200px;
+  padding: 4px 0;
+  background: var(--c-bg);
+  border: 1px solid var(--c-border-strong);
+  border-radius: 3px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  z-index: 50;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  width: 100%;
+  padding: 4px 12px;
+  border: none;
+  background: transparent;
+  color: var(--c-text);
+  font-size: var(--fs-ui);
+  font-family: var(--font-ui);
+  text-align: left;
+  cursor: default;
+  white-space: nowrap;
+}
+.menu-item.hi,
+.menu-item:hover {
+  background: var(--c-row-sel);
+}
+.menu-label {
+  flex: 1 1 auto;
+}
+.menu-accel {
+  flex: 0 0 auto;
+  color: var(--c-text-dim);
+  font-size: 11px;
+}
+
+/* 高级搜索语法速查子面板（照 image21，出现在帮助菜单右侧） */
+.menu-syntax {
+  position: absolute;
+  top: 100%;
+  left: 100%;
+  margin-top: -4px;
+  width: 340px;
+  padding: 8px 10px 10px;
+  background: var(--c-bg);
+  border: 1px solid var(--c-border-strong);
+  border-radius: 3px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  z-index: 60;
+}
+.syntax-title {
+  font-weight: 600;
+  color: var(--c-text);
+  margin-bottom: 6px;
+}
+.syntax-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.syntax-table th,
+.syntax-table td {
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--c-border);
+  text-align: left;
+  vertical-align: top;
+}
+.syntax-table th {
+  color: var(--c-text-dim);
+  font-weight: 600;
+}
+.syntax-op {
+  width: 34px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--c-accent);
+}
+.syntax-name {
+  width: 40px;
+  color: var(--c-text);
+}
+.syntax-desc {
+  color: var(--c-text-dim);
+}
+.syntax-hint {
+  margin-top: 8px;
+  color: var(--c-text-dim);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* ------------------------------ 工具栏 ------------------------------ */
+
+.app-toolbar {
+  display: flex;
+  align-items: center;
+  height: var(--h-toolbar);
+  padding: 0 6px;
+  gap: 1px;
+  background: var(--c-bg-alt);
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.tb-cell {
+  display: inline-flex;
+  align-items: center;
+}
+.tb-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 5px;
+  background: var(--c-border);
+}
+
+.tb-btn {
+  width: 26px;
+  height: 26px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--c-text);
+  font-size: 14px;
+  line-height: 1;
+  cursor: default;
+}
+.tb-btn:hover:not(:disabled) {
+  background: var(--c-row-hover);
+  border-color: var(--c-border);
+}
+.tb-btn:disabled {
+  opacity: 0.35;
+}
+
+.tb-spacer {
+  flex: 1 1 auto;
+}
+
+/* ------------------------------ 状态栏 ------------------------------ */
+
+.statusbar {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) minmax(0, auto);
+  align-items: center;
+  gap: 12px;
+  height: var(--h-status);
+  padding: 0 10px;
+  background: var(--c-bg-alt);
+  border-top: 1px solid var(--c-border);
+  color: var(--c-text-dim);
+  font-size: 11px;
+  flex: 0 0 auto;
+}
+.status-text {
+  white-space: nowrap;
+}
+.status-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--c-text);
+}
+.status-right {
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* ------------------------------ 欢迎页 ------------------------------ */
+
+.welcome {
+  height: 100%;
+  min-height: 0;
+  padding: 10px 16px 16px;
+  background: var(--c-bg);
+  color: var(--c-text);
+  line-height: 1.7;
+}
+
+.welcome-head {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--c-border);
+  padding-bottom: 6px;
+  margin-bottom: 10px;
+}
+.welcome-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.welcome-section {
+  margin-bottom: 14px;
+}
+.welcome-section h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.welcome-section ol {
+  margin: 0;
+  padding-left: 20px;
+}
+.welcome-section li {
+  margin-bottom: 2px;
+}
+.welcome-section p {
+  margin: 4px 0;
+}
+.welcome-dim {
+  color: var(--c-text-dim);
+}
+
+.welcome-actions {
+  margin-top: 16px;
+}
+
+/* --------------------------- 设置对话框 --------------------------- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 100;
+}
+
+.settings-dialog {
+  width: min(560px, 92vw);
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--c-bg);
+  color: var(--c-text);
+  border: 1px solid var(--c-border-strong);
+  border-radius: 6px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.dialog-head {
+  display: flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 10px;
+  background: var(--c-bg-alt);
+  border-bottom: 1px solid var(--c-border);
+}
+.dialog-title {
+  font-weight: 600;
+}
+.dialog-close {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--c-text-dim);
+  font-size: 13px;
+  cursor: default;
+}
+.dialog-close:hover {
+  color: var(--c-text);
+}
+
+.settings-body {
+  padding: 12px 16px;
+  min-height: 120px;
+}
+
+.settings-section {
+  margin-bottom: 18px;
+}
+.settings-section h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--c-border);
+}
+.settings-hint {
+  margin: 0 0 8px;
+  color: var(--c-text-dim);
+  font-size: 11px;
+}
+
+.theme-row {
+  display: flex;
+  gap: 8px;
+}
+.theme-choice {
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 16px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: 3px;
+  background: var(--c-bg-alt);
+  color: var(--c-text);
+  cursor: default;
+}
+.theme-choice:hover {
+  background: var(--c-row-hover);
+}
+.theme-choice.active {
+  background: var(--c-accent-soft);
+  border-color: var(--c-accent);
+  color: var(--c-accent);
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  cursor: default;
+}
+
+.hotkey-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.hotkey-table th,
+.hotkey-table td {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--c-border);
+  text-align: left;
+}
+.hotkey-table th {
+  color: var(--c-text-dim);
+  font-weight: 600;
+}
+.hotkey-label {
+  color: var(--c-text);
+}
+.hotkey-input {
+  width: 180px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: 3px;
+  background: var(--c-bg-sunken);
+  color: var(--c-text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: default;
+}
+.hotkey-input:focus {
+  outline: 2px solid var(--c-accent-soft);
+  border-color: var(--c-accent);
+}
+
+.dialog-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--c-border);
+  background: var(--c-bg-alt);
+}
+.settings-feedback {
+  flex: 1 1 auto;
+  font-size: 11px;
+  color: var(--c-text-dim);
+}
+.settings-feedback.ok {
+  color: var(--c-ok);
+}
+.settings-feedback.err {
+  color: var(--c-danger);
+}

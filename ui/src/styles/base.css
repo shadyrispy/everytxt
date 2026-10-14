@@ -1,0 +1,175 @@
+/* ============================================================
+   基础层：设计令牌 + 布局外壳
+   所有权：集成负责人（子项 agent 勿改）
+   子项样式各自落在 styles/{search,results,index,preview,shell}.css
+   ============================================================ */
+
+:root {
+  --c-bg: #ffffff;
+  --c-bg-alt: #f5f6f7;
+  --c-bg-sunken: #eceef1;
+  --c-border: #d6d9de;
+  --c-border-strong: #b9bec6;
+  --c-text: #1f2328;
+  --c-text-dim: #6b7280;
+  --c-accent: #2d7ff9;
+  --c-accent-soft: #dbeafe;
+  --c-danger: #d33c3c;
+  --c-ok: #2e9e5b;
+  --c-mark: #ffe066;
+  --c-row-hover: #eef2f7;
+  --c-row-sel: #dbeafe;
+
+  --h-menu: 26px;
+  --h-toolbar: 34px;
+  --h-status: 24px;
+  --fs-ui: 12px;
+  --fs-mono: 12px;
+  --font-ui: "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, "Sarasa Mono SC", monospace;
+
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --c-bg: #1e1f22;
+  --c-bg-alt: #26282c;
+  --c-bg-sunken: #16171a;
+  --c-border: #3a3d42;
+  --c-border-strong: #4d5157;
+  --c-text: #e3e5e8;
+  --c-text-dim: #9aa0a6;
+  --c-accent: #4c9aff;
+  --c-accent-soft: #22334d;
+  --c-danger: #e5544b;
+  --c-ok: #43b581;
+  --c-mark: #7a6a1f;
+  --c-row-hover: #2c2f34;
+  --c-row-sel: #22334d;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: var(--fs-ui);
+  color: var(--c-text);
+  background: var(--c-bg);
+  overflow: hidden;
+  user-select: none;
+}
+
+/* ---------------- 应用外壳栅格：菜单 / 工具栏 / 搜索区 / 主区 / 状态栏 ---- */
+
+.app {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  height: 100%;
+}
+
+.app-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 46%);
+  min-height: 0;
+  gap: 0;
+  border-top: 1px solid var(--c-border);
+}
+
+.app-main.single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* 通用滚动容器 */
+.scroll-y {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* 通用可关闭提示条 */
+.error-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: #fdecec;
+  border-bottom: 1px solid #f3c2c2;
+  color: #8a2020;
+}
+
+:root[data-theme='dark'] .error-bar {
+  background: #3a2020;
+  border-bottom-color: #5a2c2c;
+  color: #f0b4b4;
+}
+
+.error-bar .error-close {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--c-text-dim);
+  padding: 16px;
+  text-align: center;
+}
+
+/* 圆点状态指示（索引态） */
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c-text-dim);
+}
+.dot.on {
+  background: var(--c-ok);
+}
+.dot.busy {
+  background: var(--c-accent);
+}
+.dot.warn {
+  background: #e0a02a;
+}
+
+/* 通用按钮 */
+.btn {
+  height: 22px;
+  padding: 0 10px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: 3px;
+  background: var(--c-bg-alt);
+  color: var(--c-text);
+  font-size: var(--fs-ui);
+  cursor: pointer;
+}
+.btn:hover:not(:disabled) {
+  background: var(--c-row-hover);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.btn.primary {
+  background: var(--c-accent);
+  border-color: var(--c-accent);
+  color: #fff;
+}

@@ -1,0 +1,345 @@
+/* ============================================================
+   子项 3 · 索引管理对话框样式
+   令牌全部取自 styles/base.css 的 --c-*，禁止硬编码颜色。
+   类名统一 idx- 前缀，避免与其他子项样式冲突。
+   ============================================================ */
+
+.idx-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--c-bg-sunken) 65%, transparent);
+}
+
+.idx-dialog {
+  position: relative;
+  width: min(920px, 94vw);
+  height: min(620px, 90vh);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: var(--c-bg);
+  color: var(--c-text);
+  border: 1px solid var(--c-border-strong);
+  border-radius: 6px;
+  box-shadow: 0 12px 40px color-mix(in srgb, var(--c-bg-sunken) 70%, transparent);
+  overflow: hidden;
+}
+
+/* ------------------------------- 头部 ------------------------------- */
+
+.idx-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px;
+  background: var(--c-bg-alt);
+  border-bottom: 1px solid var(--c-border);
+}
+
+.idx-title {
+  font-weight: 600;
+}
+
+.idx-close {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--c-text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+.idx-close:hover {
+  color: var(--c-text);
+}
+
+/* --------------------------- 主体：左导航 + 内容 --------------------------- */
+
+.idx-body {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  min-height: 0;
+}
+
+.idx-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 6px;
+  background: var(--c-bg-alt);
+  border-right: 1px solid var(--c-border);
+}
+
+.idx-nav-item {
+  height: 28px;
+  padding: 0 10px;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--c-text);
+  font-size: var(--fs-ui);
+  cursor: pointer;
+}
+.idx-nav-item:hover {
+  background: var(--c-row-hover);
+}
+.idx-nav-item.active {
+  background: var(--c-accent-soft);
+  border-color: var(--c-accent);
+  color: var(--c-text);
+}
+
+.idx-content {
+  padding: 12px 14px;
+  min-height: 0;
+}
+
+.idx-section h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.idx-sub {
+  margin: 12px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-text-dim);
+}
+
+/* ------------------------------- 表格 ------------------------------- */
+
+.idx-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-ui);
+}
+.idx-table th,
+.idx-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--c-border);
+  text-align: left;
+  vertical-align: middle;
+}
+.idx-table th {
+  color: var(--c-text-dim);
+  font-weight: 500;
+  background: var(--c-bg-alt);
+  position: sticky;
+  top: 0;
+}
+.idx-col-act {
+  width: 130px;
+  white-space: nowrap;
+}
+.idx-col-act .btn {
+  margin-right: 4px;
+}
+.idx-col-state {
+  width: 118px;
+}
+.idx-exts {
+  color: var(--c-text-dim);
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.idx-badge {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--c-accent-soft);
+  color: var(--c-accent);
+  font-size: 11px;
+}
+
+.idx-empty {
+  padding: 10px;
+  color: var(--c-text-dim);
+  text-align: center;
+}
+.idx-mono {
+  font-family: var(--font-mono);
+}
+
+/* ------------------------------- 表单 ------------------------------- */
+
+.idx-add-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.idx-label {
+  color: var(--c-text-dim);
+  white-space: nowrap;
+}
+
+.idx-input,
+.idx-select {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: 3px;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-size: var(--fs-ui);
+  font-family: inherit;
+}
+.idx-input.grow {
+  flex: 1;
+  min-width: 0;
+}
+.idx-input:disabled,
+.idx-select:disabled {
+  opacity: 0.5;
+}
+.idx-input:focus,
+.idx-select:focus {
+  outline: none;
+  border-color: var(--c-accent);
+}
+
+.idx-kv {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 0 0 8px;
+}
+.idx-kv dt {
+  color: var(--c-text-dim);
+}
+.idx-kv dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.idx-hint {
+  margin: 10px 0 0;
+  color: var(--c-text-dim);
+  line-height: 1.6;
+}
+.idx-hint code {
+  font-family: var(--font-mono);
+  background: var(--c-bg-sunken);
+  padding: 0 4px;
+  border-radius: 3px;
+}
+
+.idx-radio-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.idx-radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* --------------------------- 根目录与进度 --------------------------- */
+
+.idx-roots {
+  margin: 0;
+  padding: 6px 10px;
+  list-style: none;
+  background: var(--c-bg-sunken);
+  border: 1px solid var(--c-border);
+  border-radius: 4px;
+  max-height: 120px;
+  overflow: auto;
+}
+.idx-roots li {
+  padding: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+.idx-progress {
+  margin-top: 12px;
+}
+.idx-progress-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--c-bg-sunken);
+  border: 1px solid var(--c-border);
+  overflow: hidden;
+}
+.idx-progress-fill {
+  height: 100%;
+  background: var(--c-accent);
+  transition: width 0.15s linear;
+}
+.idx-progress-text {
+  margin-top: 4px;
+  color: var(--c-text-dim);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ------------------------------- 底部 ------------------------------- */
+
+.idx-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 10px;
+  background: var(--c-bg-alt);
+  border-top: 1px solid var(--c-border);
+}
+.idx-foot .btn {
+  margin-left: 0;
+}
+.idx-foot .btn:last-child {
+  margin-left: auto;
+}
+
+.idx-msg {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.idx-msg.ok {
+  color: var(--c-ok);
+}
+.idx-msg.err {
+  color: var(--c-danger);
+}
+
+/* 危险按钮：仅改前景/描边，底色沿用 .btn */
+.idx-dialog .btn.danger {
+  color: var(--c-danger);
+  border-color: var(--c-danger);
+}
+.idx-dialog .btn.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--c-danger) 12%, var(--c-bg-alt));
+}
+
+/* --------------------------- 二次确认条 --------------------------- */
+
+.idx-confirm {
+  position: absolute;
+  left: 50%;
+  bottom: 48px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 86%;
+  padding: 10px 14px;
+  background: var(--c-bg-alt);
+  border: 1px solid var(--c-border-strong);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--c-bg-sunken) 70%, transparent);
+}
+.idx-confirm-text {
+  overflow-wrap: anywhere;
+}

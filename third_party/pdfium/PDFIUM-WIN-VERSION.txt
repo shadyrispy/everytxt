@@ -1,0 +1,12 @@
+# Windows 版 PDFium（x64）来源与版本
+#
+# 文件：third_party/pdfium/lib/pdfium.dll
+# 来源：https://github.com/bblanchon/pdfium-binaries/releases（latest → pdfium-win-x64.tgz）
+#      国内通道：https://ghfast.top/https://github.com/...
+# 版本：Chromium 157.0.8100.0（MAJOR=157 MINOR=0 BUILD=8100 PATCH=0）
+# 用途：tauri.conf.json resources glob（../third_party/pdfium/lib/* → lib/）在
+#      Windows 打包时映射进 bundle；运行时 stcore/src/extract/pdf.rs 按
+#      exe 同级 / lib/ / ../lib/ 顺序搜索 pdfium.dll。
+#
+# 注意：libpdfium.so（Linux）版本未随仓库固化记录，刷新时建议同步记录两侧版本，
+#      避免跨平台 pdfium-render 绑定行为漂移。
