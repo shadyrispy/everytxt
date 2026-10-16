@@ -12,8 +12,15 @@
 //! 3. 源码树 `third_party/ocr-models/`
 //! 4. 以上皆无 → 退回注册名（`auto-download` 从 ModelScope 拉取到 `$OAR_HOME`）
 //!
-//! ## 协议（stdio，一行一个 JSON）
+//! ## 协议（响应恒为 stdout 一行 JSON；请求二选一）
 //! 请求：`{"image_path": "/abs/path/page.png"}`
+//! - **首选 argv**：`ocr-helper '{"image_path":"..."}'`（argv[1] 即请求 JSON）
+//! - 回退 stdin：一行 JSON（`echo '{...}' | ocr-helper`，手动调试用）
+//!
+//! 为什么首选 argv：Windows 上 Rust `Command::spawn` 的 stdin 管道
+//! （OUTBOUND 服务器 + GENERIC_READ 客户端）在部分机器上确定性返回
+//! ERROR_PIPE_BUSY(231)；stdout 管道（INBOUND + GENERIC_WRITE）不受影响，
+//! 故请求走 argv、响应走 stdout。
 //! 成功：`{"ok":true,"image_width":900,"image_height":300,
 //!        "lines":[{"text":"...","confidence":0.99,"box":[x,y,w,h]}]}`（box 为像素坐标）
 //! 失败（退出码 1）：`{"ok":false,"error":"..."}`
@@ -96,6 +103,15 @@ fn main() {
 }
 
 fn read_request() -> Result<Request> {
+    // 首选 argv[1]：请求 JSON 字符串（规避 Windows stdin 管道 231 问题）
+    if let Some(arg) = std::env::args().nth(1) {
+        let arg = arg.trim();
+        if !arg.is_empty() {
+            return serde_json::from_str::<Request>(arg)
+                .map_err(|e| anyhow!("argv 请求解析失败: {e}"));
+        }
+    }
+    // 回退 stdin：一行 JSON（手动调试协议）
     let stdin = std::io::stdin();
     let mut buf = String::new();
     stdin.lock().read_line(&mut buf)?;

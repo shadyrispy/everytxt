@@ -4899,6 +4899,7 @@ dependencies = [
  "fs_extra",
  "globset",
  "ignore",
+ "indexmap 1.9.3",
  "notify",
  "open",
  "rayon",

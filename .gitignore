@@ -9,6 +9,15 @@ third_party/pdfium/PDFIUM-VERSION.txt
 third_party/ocr-models/*.onnx
 third_party/ocr-models/ppocrv6_tiny_dict.txt
 
+# ONNX Runtime 原生库（scripts/setup-ocr-local.sh 获取，勿提交）
+third_party/onnxruntime/
+
+# ocr-helper 预编译产物（本地构建/分发用，勿提交）
+ocr-helper/prebuilt/
+
+# 本机构建调优（jobs/debug 档位因机器而异，勿提交）
+.cargo/
+
 # Node
 node_modules/
 ui/node_modules/

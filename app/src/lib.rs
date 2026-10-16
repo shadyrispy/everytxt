@@ -32,6 +32,25 @@ pub fn run(open_dir: Option<String>) {
         ))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(move |app| {
+            // 主窗口代码建窗（tauri.conf.json 的 app.windows 恒为空数组）：
+            // wry 0.57 的 create_environment 只认 builder 传入的
+            // additional_browser_args，**不读** WebView2 文档约定的
+            // WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS 环境变量；无 GPU 环境
+            // （虚拟机/沙箱）需 --disable-gpu 等 flags 时只能走此通道，
+            // 详见 webview_browser_args()。
+            let mut win = tauri::WebviewWindowBuilder::new(
+                app,
+                "main",
+                tauri::WebviewUrl::App("index.html".into()),
+            )
+            .title("search-tool")
+            .inner_size(1200.0, 760.0)
+            .min_inner_size(900.0, 560.0);
+            if let Some(args) = webview_browser_args() {
+                win = win.additional_browser_args(&args);
+            }
+            win.build()?;
+
             // R2：先起索引任务队列（须早于任何 submit）
             indexer_queue::init(app.handle().clone());
 
@@ -72,6 +91,27 @@ pub fn run(open_dir: Option<String>) {
         .invoke_handler(commands::handler())
         .run(tauri::generate_context!())
         .expect("启动 GUI 失败");
+}
+
+/// WebView2 browser 附加 flags（桥接 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`）。
+///
+/// wry 0.57 `create_environment` 只认 builder 传入的 `additional_browser_args`，
+/// **不读取** WebView2 文档约定的同名环境变量（wry-0.57.0/src/webview2/mod.rs
+/// `create_environment`：`pl_attrs.additional_browser_args.unwrap_or_else(...)`，
+/// 无 env 读取分支）；本函数显式桥接：先复刻 wry 默认 args
+/// （`--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection`，
+/// 即 wry 该 `unwrap_or_else` 分支内的默认串），再追加环境变量自定义 flags。
+///
+/// 环境变量未设置/为空 → `None`（走 wry 原装默认路径，行为零变化）。
+fn webview_browser_args() -> Option<String> {
+    let extra = std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())?;
+    let mut args = String::from("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection");
+    args.push(' ');
+    args.push_str(&extra);
+    Some(args)
 }
 
 /// 测试用临时目录（scanner 迁入 stcore 后的 app 侧替身；原 `scanner::testutil`）

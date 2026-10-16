@@ -12,6 +12,16 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+# indexmap 1.9.3 的 `[features]` 未声明 `default`（也无 `std` 默认启用），
+# build.rs 仅靠 autocfg 探测 sysroot 来 emit `has_std`；本机探测失败 →
+# indexmap 以 no_std 形态编译 → `IndexMap<K, V, S = RandomState>` 的默认
+# 类型参数消失 → schemars 0.8.22 的 `pub type Map<K, V> = indexmap::IndexMap<K, V>`
+# 触发 E0107（expected 3 generic arguments）。
+# 显式声明 indexmap 1.x 并启用 `std`：Cargo 特性在依赖图中求并集，
+# 使 indexmap 的 `CARGO_FEATURE_STD` 恒被设置，build.rs 直接 emit `has_std`，
+# 不再依赖 autocfg 探测。不改变任何上游行为，待上游修复后可移除。
+indexmap = { version = "1.9", features = ["std"] }
+
 [dependencies]
 stcore = { path = "../stcore" }
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
@@ -43,5 +53,9 @@ tauri-plugin-global-shortcut = "2"
 tauri-plugin-autostart = "2"
 
 [features]
-# 默认启用 Tauri 自定义协议（release 必需）
+# 注意：custom-protocol **不在 default**（与 tauri 官方模板一致：tauri dev 走 devUrl
+# 热重载不需要它，tauri build 会由 CLI 自动带上）。但**裸 cargo build 出的二进制
+# 必须显式启用**：`cargo build -p search-tool --features custom-protocol`。
+# 否则 generate_context! 判定 dev=true + devUrl 存在 → 嵌入空资产 →
+# tauri://localhost 404 空响应 + wry 透明黑背景 = 纯黑屏（2026-10-16 实测根因）。
 custom-protocol = ["tauri/custom-protocol"]

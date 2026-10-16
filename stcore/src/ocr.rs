@@ -14,11 +14,19 @@
 //! 设 `SEARCH_TOOL_OCR=1` 启用。未启用或无 helper 时，相关文件记 `Unsupported` 跳过
 //! （不记为失败，也不阻塞索引）。
 //!
+//! ## 传输协议
+//! 请求经 **argv[1]**（JSON 字符串）传给 helper，响应经 **stdout 管道**读回。
+//! 不用 stdin 管道传请求：Windows 上部分环境对「OUTBOUND 服务器 +
+//! GENERIC_READ 客户端」的命名管道客户端连接确定性返回 ERROR_PIPE_BUSY(231)
+//! （rustc 1.99 std `Command::spawn` 的 stdin 管道实现踩中此问题；
+//! stdout 方向 INBOUND + GEN_WRITE 不受影响）。argv+stdout 组合在所有
+//! 平台等价工作。helper 侧保留 stdin 回退（`echo '{...}' | ocr-helper`）。
+//!
 //! ## 并发
 //! 单 helper 进程按请求串行处理，故全局互斥串行化 OCR 调用（plan 风险 R2：
 //! 避免 OCR 内存峰值与索引线程叠加）。
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -153,23 +161,15 @@ fn call_helper(path: &Path) -> Result<HelperResponse, ExtractError> {
     let _guard = lock().lock().unwrap_or_else(|e| e.into_inner());
 
     let req = serde_json::json!({ "image_path": path.to_string_lossy() }).to_string();
+    // 请求走 argv（见模块文档：Windows stdin 管道 PIPE_BUSY 规避）；
+    // 响应走 stdout 管道（INBOUND 服务器 + GEN_WRITE 客户端方向，各平台均正常）
     let mut child = Command::new(&helper)
-        .stdin(Stdio::piped())
+        .arg(&req)
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
         .map_err(|e| io_err(format!("启动 OCR helper 失败: {e}")))?;
-
-    {
-        let mut stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| io_err("无法写入 OCR helper stdin".to_string()))?;
-        stdin
-            .write_all(req.as_bytes())
-            .and_then(|_| stdin.write_all(b"\n"))
-            .map_err(|e| io_err(format!("写入 OCR 请求失败: {e}")))?;
-    } // drop stdin → helper 读到 EOF
 
     let stdout = child
         .stdout

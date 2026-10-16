@@ -10,16 +10,7 @@
     "beforeBuildCommand": "cd ../ui && pnpm build"
   },
   "app": {
-    "windows": [
-      {
-        "label": "main",
-        "title": "search-tool",
-        "width": 1200,
-        "height": 760,
-        "minWidth": 900,
-        "minHeight": 560
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }

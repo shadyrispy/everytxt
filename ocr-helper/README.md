@@ -22,13 +22,22 @@ cargo build --release          # 首次会拉 ONNX Runtime 动态库
 
 首次运行会从 ModelScope 自动下载模型（`pp-ocrv6_tiny_*`）到 `$OAR_HOME`（默认 `~/.oar`）。
 
-## 协议（stdio，一行一个 JSON）
+## 协议（响应恒为 stdout 一行 JSON；请求二选一）
 
 请求：
 
 ```json
 {"image_path": "/abs/path/page.png"}
 ```
+
+- **首选 argv**：`ocr-helper '{"image_path":"..."}'`（argv[1] 即请求 JSON）
+- 回退 stdin：一行 JSON（手动调试用）
+
+> 为什么首选 argv：Windows 上部分环境对命名管道「OUTBOUND 服务器 +
+> GENERIC_READ 客户端」的客户端连接确定性返回 ERROR_PIPE_BUSY(231)
+> （rustc 1.99 std `Command::spawn` 的 stdin 管道实现踩中；stdout 方向
+> INBOUND + GEN_WRITE 不受影响）。故主程序（stcore）请求走 argv、响应走
+> stdout 管道，全平台等价。
 
 成功：
 
@@ -45,6 +54,9 @@ cargo build --release          # 首次会拉 ONNX Runtime 动态库
 ## 手动验证
 
 ```bash
+# argv（主程序同款路径）
+./target/release/ocr-helper '{"image_path": "/tmp/scan.png"}'
+# stdin 回退
 echo '{"image_path": "/tmp/scan.png"}' | ./target/release/ocr-helper
 ```
 
