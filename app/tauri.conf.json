@@ -15,6 +15,12 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": ["https://example.invalid/latest.json"],
+      "pubkey": ""
+    }
+  },
   "bundle": {
     "active": true,
     "targets": ["deb", "appimage"],

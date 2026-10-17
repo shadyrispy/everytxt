@@ -159,23 +159,31 @@ fn run_slash_search(query: String, drive: Option<String>, ext: Option<String>) {
         .map(drive_to_dir_prefix)
         .filter(|d| !d.is_empty());
 
-    // 1) 尝试单实例 socket 转发（主实例在 GUI 呈现结果）
+    // 1) 尝试单实例转发（主实例在 GUI 呈现结果）
+    //    transport 按平台：Unix socket 文件 / Windows TCP 端口文件（shell.rs）
     let index_dir = search_tool_lib::state::default_index_dir();
-    let client = stcore::service::SocketClient::new(search_tool_lib::commands::shell::socket_path(
-        &index_dir,
+    #[cfg(unix)]
+    let client = Some(stcore::service::SocketClient::new(
+        search_tool_lib::commands::shell::socket_path(&index_dir),
     ));
+    #[cfg(windows)]
+    let client = search_tool_lib::commands::shell::read_instance_port(&index_dir)
+        .map(stcore::service::SocketClient::new_tcp);
     let req = stcore::service::ServiceSearchRequest {
         query: query.clone(),
         dir: dir.clone(),
         ext: ext.clone(),
         ..Default::default()
     };
-    match client.search(req) {
-        Ok(_) => {
-            cli_out!("已在主窗口呈现结果");
-            return;
-        }
-        Err(e) => eprintln!("主实例未在运行（{e}），回退本地搜索"),
+    match client {
+        Some(client) => match client.search(req) {
+            Ok(_) => {
+                cli_out!("已在主窗口呈现结果");
+                return;
+            }
+            Err(e) => eprintln!("主实例未在运行（{e}），回退本地搜索"),
+        },
+        None => eprintln!("主实例未在运行（无端口文件），回退本地搜索"),
     }
 
     // 2) 本地 headless 回退

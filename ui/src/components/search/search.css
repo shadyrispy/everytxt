@@ -108,3 +108,13 @@
   border-color: var(--c-accent);
   box-shadow: 0 0 0 2px var(--c-accent-soft);
 }
+
+/* D2：当前文件类型描述（option title 在部分浏览器不生效的可靠呈现通道） */
+.filter-row .filter-type-desc {
+  color: var(--c-text-dim);
+  font-size: var(--fs-ui);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

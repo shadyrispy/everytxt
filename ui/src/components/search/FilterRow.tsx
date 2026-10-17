@@ -9,6 +9,8 @@
 import { useEffect, useState } from 'react'
 import type { FileType } from '../../types'
 import { listFileTypes, listIndexedRoots } from '../../api/indexAdmin'
+import { useI18n } from '../../i18n'
+import { descForTypeName } from '../../fileTypeCatalog'
 import './search.css'
 
 export interface FilterRowProps {
@@ -104,6 +106,7 @@ export default function FilterRow({
 }: FilterRowProps) {
   const [roots, setRoots] = useState<string[]>([])
   const [types, setTypes] = useState<FileType[]>([])
+  const { t } = useI18n()
 
   /* 挂载时各拉一次（失败静默） */
   useEffect(() => {
@@ -153,13 +156,19 @@ export default function FilterRow({
           value={fileType ?? ALL}
           onChange={(e) => onFileTypeChange(e.target.value === ALL ? null : e.target.value)}
         >
-          <option value={ALL}>全部文件类型</option>
-          {types.map((t) => (
-            <option key={t.id} value={t.name}>
-              {t.name}
+          {/* D2：option title 仅部分浏览器（如 Firefox）呈现，故旁置 desc 小 span 作可靠通道 */}
+          <option value={ALL} title={t('idx.allTypes')}>
+            全部文件类型
+          </option>
+          {types.map((ft) => (
+            <option key={ft.id} value={ft.name} title={descForTypeName(ft.name)}>
+              {ft.name}
             </option>
           ))}
         </select>
+        <span className="filter-type-desc">
+          {fileType === null ? t('idx.allTypes') : descForTypeName(fileType)}
+        </span>
       </label>
 
       <label className="filter-label">

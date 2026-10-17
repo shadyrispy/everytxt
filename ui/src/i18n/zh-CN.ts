@@ -56,6 +56,27 @@ const zhCN: Record<string, string> = {
   'status.indexUnavailable': '索引不可用，请重建',
   'status.indexLoading': '索引加载中…',
 
+  /* IndexAdminDialog：B4 查找/浏览添加 */
+  'idx.addFind': '查找添加…',
+  'idx.addBrowse': '浏览添加…',
+  'idx.findTypePlaceholder': '输入类型名，如 chm',
+  'idx.stagedTypes': '已暂存',
+  'idx.stagedEmpty': '点击上方列表暂存类型',
+  'idx.confirmAddTypes': '确定',
+  'idx.cancel': '取消',
+  'idx.unstage': '取消暂存',
+  'idx.noMatch': '无匹配类型',
+  'idx.noExt': '无法从文件名识别扩展名',
+  'idx.unsupported': '不支持的格式：{1}（该格式暂不支持内容提取）',
+  'idx.addedTypes': '已新增 {1} 个类型',
+
+  /* FilterRow：D2 类型描述 */
+  'idx.allTypes': '不限文件类型',
+
+  /* SelectionBar：D1 全部删除 */
+  'sel.deleteAll': '全部删除',
+  'sel.deleteAllConfirm': '将删除全部 {1} 个搜索结果文件（移至回收站，可恢复）。确定继续？',
+
   /* WelcomePage */
   'welcome.title': '欢迎使用',
   'welcome.steps.title': '搜索步骤',
@@ -74,6 +95,16 @@ const zhCN: Record<string, string> = {
   'welcome.about.body2':
     'everytxt 免费且开源：索引与检索均在本地完成，文档内容不会离开你的电脑。欢迎通过菜单「帮助」提出意见和建议。',
   'welcome.openHomepage': '访问项目主页',
+  /* ---- 7.9 / B6：检测更新 ---- */
+  'update.check': '检测更新',
+  'update.checking': '正在检查更新…',
+  'update.latest': '当前已是最新版本（{version}）',
+  'update.available': '发现新版本 {version}（当前 {current}）',
+  'update.availableNotes': '更新说明：\n{notes}',
+  'update.installConfirm': '发现新版本 {version}，是否现在更新？\n应用将下载并自动重启。',
+  'update.installing': '正在下载并安装更新，应用即将重启…',
+  'update.failed': '更新检查失败：{error}',
+  'update.notConfigured': '更新通道未配置（首个正式版发布后启用）',
 }
 
 export default zhCN

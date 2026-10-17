@@ -13,6 +13,7 @@
 import { useState } from 'react'
 import type { FileOpResult } from '../../types'
 import { errMsg } from '../../util'
+import { useI18n } from '../../i18n'
 import * as files from '../../api/files'
 import './results.css'
 
@@ -21,10 +22,15 @@ export interface SelectionBarProps {
   onClear: () => void
   /** 删除/移动成功后的收尾（传入实际失效的路径） */
   onRefresh: (removed: string[]) => void
+  /** D1：全部搜索结果路径（供「全部删除」用；缺省/长度不大于选中时不显示入口） */
+  allPaths?: string[]
+  /** D1：一键全选结果（「全选」按钮；与 App 的 Ctrl+A 同语义） */
+  onSelectAll?: () => void
 }
 
-export default function SelectionBar({ paths, onClear, onRefresh }: SelectionBarProps) {
+export default function SelectionBar({ paths, onClear, onRefresh, allPaths, onSelectAll }: SelectionBarProps) {
   const [busy, setBusy] = useState(false)
+  const { t } = useI18n()
 
   if (paths.length === 0) return null
 
@@ -119,6 +125,29 @@ export default function SelectionBar({ paths, onClear, onRefresh }: SelectionBar
         <button className="btn" disabled={busy} onClick={onClear}>
           清除选择
         </button>
+        {/* D1：「全部删除」一键入口（手册 4.9）。
+            注意：仅在操作条可见（有选中）时展示；无选中时的入口留待后续。 */}
+        {allPaths && allPaths.length > paths.length && (
+          <>
+            <button className="btn" disabled={busy} onClick={onSelectAll}>
+              {t('menu.edit.selectAll')}
+            </button>
+            <button
+              className="btn danger"
+              disabled={busy}
+              onClick={() =>
+                void guard(async () => {
+                  if (!window.confirm(t('sel.deleteAllConfirm', [allPaths.length]))) return
+                  const r = await files.moveToTrash(allPaths)
+                  notify(r, '移入回收站')
+                  onRefresh(removedPaths(r, allPaths))
+                })
+              }
+            >
+              {t('sel.deleteAll')}
+            </button>
+          </>
+        )}
       </div>
     </div>
   )

@@ -51,6 +51,7 @@ globset = "0.4"
 # --- P0+ 子项 5：应用外壳 ---
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-autostart = "2"
+tauri-plugin-updater = "2"
 
 [features]
 # 注意：custom-protocol **不在 default**（与 tauri 官方模板一致：tauri dev 走 devUrl

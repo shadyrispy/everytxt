@@ -539,6 +539,29 @@ export default function App() {
         void onExport()
         return
       }
+      /* 2b. Ctrl+U 检测更新（7.9 / B6） */
+      if (ctrl && !e.shiftKey && key === 'u') {
+        e.preventDefault()
+        void (async () => {
+          try {
+            const info = await api.checkUpdate()
+            if (!info.available) {
+              window.alert(t('update.latest', { version: info.currentVersion }))
+              return
+            }
+            const notes = info.notes ? `\n${t('update.availableNotes', { notes: info.notes })}` : ''
+            const ok = window.confirm(
+              t('update.installConfirm', { version: info.version ?? '' }) + notes,
+            )
+            if (!ok) return
+            await api.installUpdate()
+          } catch (err) {
+            const msg = errMsg(err)
+            window.alert(msg.includes('未配置') ? t('update.notConfigured') : t('update.failed', { error: msg }))
+          }
+        })()
+        return
+      }
       /* （Ctrl+Shift+C 复制路径，见第 4 组；置于 Ctrl+C 之前） */
       if (ctrl && e.shiftKey && key === 'c') {
         e.preventDefault()
@@ -777,7 +800,13 @@ export default function App() {
 
         <main className={`app-main${showWelcome ? ' single' : ''}`}>
           <section className="result-area">
-            <SelectionBar paths={selectedPaths} onClear={() => setSelected(new Set())} onRefresh={onRefreshAfterOp} />
+            <SelectionBar
+              paths={selectedPaths}
+              allPaths={results.map((r) => r.path)}
+              onSelectAll={() => setSelected(new Set(results.map((r) => r.path)))}
+              onClear={() => setSelected(new Set())}
+              onRefresh={onRefreshAfterOp}
+            />
             <ResultList
               results={results}
               activeIdx={activeIdx}

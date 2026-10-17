@@ -19,6 +19,9 @@ use crate::state::AppState;
 pub const APP_CONFIG_FILE: &str = "app.json";
 /// Unix socket 文件名（位于 index_dir 下）
 pub const SOCKET_FILE: &str = "search-tool.sock";
+/// Windows TCP loopback 端口文件名（位于 index_dir 下；单实例 transport，见 `setup_single_instance_tcp`）
+#[cfg(windows)]
+pub const PORT_FILE: &str = "search-tool.port";
 
 /* ------------------------------- 配置类型 ------------------------------- */
 
@@ -375,7 +378,7 @@ pub fn socket_path(index_dir: &std::path::Path) -> PathBuf {
 ///
 /// 旧协议（R2）保留兼容：一行 `<mode>\t<query>\n` → `<count>\n` + `<hits>\t<path>\t<title>` 行。
 ///
-/// TODO(子项5)：补 Windows 命名管道分支；补鉴权（只允许同用户）。
+/// TODO(子项5)：补鉴权（只允许同用户）。
 #[cfg(unix)]
 pub fn setup_single_instance_socket(app: &AppHandle) -> anyhow::Result<()> {
     use std::io::{BufRead, BufReader, Write};
@@ -446,8 +449,80 @@ pub fn setup_single_instance_socket(app: &AppHandle) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// 非 Unix 平台占位（Windows 走命名管道，见 TODO）
-#[cfg(not(unix))]
+/// Windows 单实例：TCP loopback 监听（协议与 Unix socket 分支逐字节一致）。
+///
+/// Windows 无 Unix domain socket；命名管道需 `windows-sys` FFI（unsafe），
+/// 故选 std 即有的 TCP loopback：主实例 bind `127.0.0.1:0` 取随机端口，
+/// 写入 `index_dir/search-tool.port`（临时文件 + rename，避免半行被并发读），
+/// CLI 二启读端口文件连通后走同一 JSON 行协议（`handle_socket_op` 复用）。
+///
+/// 探测语义对齐 Unix 分支：端口文件在且能连通 → 已有实例，不重复监听。
+#[cfg(windows)]
+pub fn setup_single_instance_tcp(app: &AppHandle) -> anyhow::Result<()> {
+    use std::io::{BufRead, BufReader};
+
+    let state = app.state::<AppState>();
+    let index_dir = state.index_dir();
+    let loopback = std::net::Ipv4Addr::LOCALHOST;
+    if let Some(port) = read_instance_port(&index_dir) {
+        let addr = std::net::SocketAddr::new(std::net::IpAddr::V4(loopback), port);
+        if std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(300))
+            .is_ok()
+        {
+            eprintln!("检测到已有实例（tcp {addr}），本实例不重复监听");
+            return Ok(());
+        }
+    }
+
+    let listener =
+        std::net::TcpListener::bind(std::net::SocketAddr::new(std::net::IpAddr::V4(loopback), 0))?;
+    let port = listener.local_addr()?.port();
+    std::fs::create_dir_all(&index_dir)?;
+    let pf = port_file_path(&index_dir);
+    let tmp = pf.with_extension("port.tmp");
+    std::fs::write(&tmp, format!("{port}\n"))?;
+    std::fs::rename(&tmp, &pf)?;
+
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        for conn in listener.incoming() {
+            let Ok(stream) = conn else { continue };
+            let app = handle.clone();
+            std::thread::spawn(move || {
+                let Ok(mut w) = stream.try_clone() else {
+                    return;
+                };
+                let mut line = String::new();
+                if BufReader::new(stream).read_line(&mut line).is_err() {
+                    return;
+                }
+                handle_socket_op(&app, line.trim(), &mut w);
+            });
+        }
+    });
+
+    Ok(())
+}
+
+/// Windows 端口文件路径（`index_dir/search-tool.port`）
+#[cfg(windows)]
+pub fn port_file_path(index_dir: &std::path::Path) -> PathBuf {
+    index_dir.join(PORT_FILE)
+}
+
+/// 读取端口文件中的端口（CLI 客户端用）。
+/// 文件缺失/内容非法 → None（调用方按"主实例未在运行"回退本地 headless）。
+#[cfg(windows)]
+pub fn read_instance_port(index_dir: &std::path::Path) -> Option<u16> {
+    std::fs::read_to_string(port_file_path(index_dir))
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+}
+
+/// 非 Unix 非 Windows 平台占位（无单实例 transport 需求）
+#[cfg(not(any(unix, windows)))]
 pub fn setup_single_instance_socket(_app: &AppHandle) -> anyhow::Result<()> {
     Ok(())
 }
@@ -455,7 +530,7 @@ pub fn setup_single_instance_socket(_app: &AppHandle) -> anyhow::Result<()> {
 /* --------------------- R5：socket JSON 行协议（op 分派） --------------------- */
 
 /// CLI `/s` 转发请求体（serde 默认宽容：缺字段为 None）
-#[cfg(unix)]
+/// （Unix socket 与 Windows TCP 两个 transport 共用同一分派逻辑）
 #[derive(Debug, serde::Deserialize)]
 struct SocketOp {
     op: String,
@@ -468,7 +543,6 @@ struct SocketOp {
 }
 
 /// emit 到主窗口的负载；前端 ExternalSearchListener 接收
-#[cfg(unix)]
 #[derive(Debug, Clone, serde::Serialize)]
 struct ExternalSearchPayload {
     query: String,
@@ -480,7 +554,6 @@ struct ExternalSearchPayload {
 
 /// 分派 JSON 行协议：op=search → 呈现转发；op=stats → 文档数。
 /// 任何错误都以 `{"ok":false,"error":...}` 行响应（客户端据此回退本地）。
-#[cfg(unix)]
 fn handle_socket_op(app: &AppHandle, line: &str, mut w: impl std::io::Write) {
     let resp = match serde_json::from_str::<SocketOp>(line) {
         Ok(op) => match op.op.as_str() {

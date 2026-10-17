@@ -336,6 +336,14 @@
   font-size: 11px;
 }
 
+.settings-update-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+
 .theme-row {
   display: flex;
   gap: 8px;

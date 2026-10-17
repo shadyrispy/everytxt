@@ -5,6 +5,7 @@
  *   启动：开机启动开关（setAutostart）；「关闭主窗口时最小化到托盘」开关（AppConfig.closeToTray）；
  *   快捷键：全量热键表（AppConfig.hotkeys，默认 10 条由后端 default_hotkeys() 提供），
  *           每行 label + accel 可编辑（输入框捕获按键组合，如 Ctrl+Shift+T）。
+ *   更新：检测更新（7.9 / B6；通道占位未配置时给出可读提示，不暴露裸网络错误）。
  *
  * 保存：setAutostart + applyGlobalHotkeys + setAppConfig，随后由 App.tsx 在 onClose 后重新拉 config 生效。
  * 注意：App.tsx 已持有 theme 状态并监听 onClose 重拉 config，故本组件只在「保存」时落盘；
@@ -13,6 +14,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { AppConfig, ThemeMode } from '../../types'
 import * as api from '../../api/shell'
+import * as updaterApi from '../../api/updater'
 import { errMsg } from '../../util'
 import './shell.css'
 
@@ -27,17 +29,49 @@ const THEMES: Array<{ value: ThemeMode; label: string }> = [
   { value: 'system', label: '跟随系统' },
 ]
 
-/** 即时预览：仅改 dataset（与 App.tsx / ThemeProvider 同一属性名），不落盘 */
-function previewTheme(t: ThemeMode) {
-  const mq = window.matchMedia('(prefers-color-scheme: dark)')
-  const resolved = t === 'system' ? (mq.matches ? 'dark' : 'light') : t
-  document.documentElement.dataset.theme = resolved
-}
+  /** 即时预览：仅改 dataset（与 App.tsx / ThemeProvider 同一属性名），不落盘 */
+  function previewTheme(t: ThemeMode) {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const resolved = t === 'system' ? (mq.matches ? 'dark' : 'light') : t
+    document.documentElement.dataset.theme = resolved
+  }
 
 export default function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const [cfg, setCfg] = useState<AppConfig | null>(null)
   const [saving, setSaving] = useState(false)
   const [feedback, setFeedback] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null)
+  const [updateBusy, setUpdateBusy] = useState(false)
+  const [updateMsg, setUpdateMsg] = useState('')
+
+  /** 检测更新（7.9 / B6）：有更新 → confirm → 下载安装（自动重启） */
+  async function onCheckUpdate() {
+    setUpdateBusy(true)
+    setUpdateMsg('')
+    try {
+      const info = await updaterApi.checkUpdate()
+      if (!info.available) {
+        setUpdateMsg(`当前已是最新版本（${info.currentVersion}）`)
+        return
+      }
+      const notes = info.notes ? `\n\n${info.notes}` : ''
+      const ok = window.confirm(
+        `发现新版本 ${info.version ?? ''}，是否现在更新？\n应用将下载并自动重启。${notes}`,
+      )
+      if (!ok) {
+        setUpdateMsg(`发现新版本 ${info.version ?? ''}（未更新）`)
+        return
+      }
+      setUpdateMsg('正在下载并安装更新，应用即将重启…')
+      await updaterApi.installUpdate()
+    } catch (e) {
+      const msg = errMsg(e)
+      setUpdateMsg(
+        msg.includes('未配置') ? '更新通道未配置（首个正式版发布后启用）' : `更新检查失败：${msg}`,
+      )
+    } finally {
+      setUpdateBusy(false)
+    }
+  }
 
   useEffect(() => {
     if (!open) return
@@ -214,6 +248,22 @@ export default function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                     ))}
                   </tbody>
                 </table>
+              </section>
+
+              <section className="settings-section">
+                <h3>更新</h3>
+                <div className="settings-update-row">
+                  <span>检测新版本（快捷键 Ctrl+U）</span>
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={updateBusy}
+                    onClick={() => void onCheckUpdate()}
+                  >
+                    {updateBusy ? '检查中…' : '检测更新'}
+                  </button>
+                </div>
+                {updateMsg && <p className="settings-hint">{updateMsg}</p>}
               </section>
             </>
           )}

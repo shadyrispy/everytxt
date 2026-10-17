@@ -57,6 +57,28 @@ const enUS: Record<string, string> = {
   'status.indexUnavailable': 'Index unavailable, please rebuild',
   'status.indexLoading': 'Loading index…',
 
+  /* IndexAdminDialog: B4 find/browse add */
+  'idx.addFind': 'Find & Add…',
+  'idx.addBrowse': 'Browse & Add…',
+  'idx.findTypePlaceholder': 'Type a file type name, e.g. chm',
+  'idx.stagedTypes': 'Staged',
+  'idx.stagedEmpty': 'Click an entry above to stage it',
+  'idx.confirmAddTypes': 'OK',
+  'idx.cancel': 'Cancel',
+  'idx.unstage': 'Unstage',
+  'idx.noMatch': 'No matching types',
+  'idx.noExt': 'Cannot determine the extension from the file name',
+  'idx.unsupported': 'Unsupported format: {1} (content extraction not supported yet)',
+  'idx.addedTypes': 'Added {1} type(s)',
+
+  /* FilterRow: D2 type description */
+  'idx.allTypes': 'Any file type',
+
+  /* SelectionBar: D1 delete all */
+  'sel.deleteAll': 'Delete All',
+  'sel.deleteAllConfirm':
+    'This will delete all {1} search result files (moved to Recycle Bin, recoverable). Continue?',
+
   /* WelcomePage */
   'welcome.title': 'Welcome',
   'welcome.steps.title': 'Getting Started',
@@ -77,6 +99,16 @@ const enUS: Record<string, string> = {
   'welcome.about.body2':
     'everytxt is free and open source: indexing and search run entirely on your machine, document content never leaves your computer. Feedback is welcome via the "Help" menu.',
   'welcome.openHomepage': 'Visit Project Home',
+  /* ---- 7.9 / B6: check for updates ---- */
+  'update.check': 'Check for Updates',
+  'update.checking': 'Checking for updates…',
+  'update.latest': 'You are on the latest version ({version})',
+  'update.available': 'New version available: {version} (current {current})',
+  'update.availableNotes': 'Release notes:\n{notes}',
+  'update.installConfirm': 'Version {version} is available. Update now?\nThe app will download the update and restart.',
+  'update.installing': 'Downloading and installing the update. The app will restart shortly…',
+  'update.failed': 'Update check failed: {error}',
+  'update.notConfigured': 'Update channel not configured (enabled after the first stable release)',
 }
 
 export default enUS

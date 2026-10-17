@@ -31,6 +31,8 @@ pub fn run(open_dir: Option<String>) {
             None,
         ))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        // 7.9 / B6：检测更新（endpoints/pubkey 占位于 tauri.conf.json，首发版填真实值）
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |app| {
             // 主窗口代码建窗（tauri.conf.json 的 app.windows 恒为空数组）：
             // wry 0.57 的 create_environment 只认 builder 传入的
@@ -77,11 +79,19 @@ pub fn run(open_dir: Option<String>) {
             //实时更新（文件监听 → 去抖后提交队列任务）
             commands::index_admin::restart_watcher(app.handle());
 
-            // 子项 5.6：CLI 单实例通信（Unix socket 监听，查询转发给本主实例）
+            // 子项 5.6：CLI 单实例通信（CLI 二启把查询转发给本主实例，避免双开索引）
+            // 平台 transport：Unix socket（Linux/macOS）/ TCP loopback（Windows），
+            // 协议一致（shell.rs `handle_socket_op` 复用）。
             #[cfg(unix)]
             {
                 if let Err(e) = commands::shell::setup_single_instance_socket(app.handle()) {
                     eprintln!("单实例 socket 监听启动失败（不影响 GUI）: {e}");
+                }
+            }
+            #[cfg(windows)]
+            {
+                if let Err(e) = commands::shell::setup_single_instance_tcp(app.handle()) {
+                    eprintln!("单实例 TCP 监听启动失败（不影响 GUI）: {e}");
                 }
             }
 

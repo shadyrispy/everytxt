@@ -7,7 +7,7 @@
  * 数据全部经 api/indexAdmin.ts；重建进度订阅后端 `index-progress` 事件
  * （负载 {done,total,current}，`current === ''` 表示本轮结束 → 收尾刷新）。
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import type {
   DirRule,
@@ -20,6 +20,8 @@ import type {
 } from '../../types'
 import * as api from '../../api/indexAdmin'
 import { errMsg } from '../../util'
+import { useI18n } from '../../i18n'
+import { entryForExt, filterCatalog, SUPPORTED_EXTS } from '../../fileTypeCatalog'
 import './index.css'
 
 export interface IndexAdminDialogProps {
@@ -61,7 +63,14 @@ function parseExts(raw: string): string[] {
     .filter(Boolean)
 }
 
+/** 文件名 → 小写扩展名（无点；无扩展名返回空串） */
+function extOfFileName(name: string): string {
+  const i = name.lastIndexOf('.')
+  return i > 0 ? name.slice(i + 1).toLowerCase() : ''
+}
+
 export default function IndexAdminDialog({ open, onClose, onPausedChange }: IndexAdminDialogProps) {
+  const { t } = useI18n()
   const [section, setSection] = useState<Section>('types')
   const [msg, setMsg] = useState<Msg>(null)
   const [confirm, setConfirm] = useState<{ text: string; onOk: () => void } | null>(null)
@@ -71,6 +80,12 @@ export default function IndexAdminDialog({ open, onClose, onPausedChange }: Inde
   const [newTypeName, setNewTypeName] = useState('')
   const [newTypeExts, setNewTypeExts] = useState('')
   const [editing, setEditing] = useState<{ id: number; name: string; exts: string } | null>(null)
+
+  /* B4：「查找添加」内联子面板 + 「浏览添加」隐藏 file input */
+  const [findOpen, setFindOpen] = useState(false)
+  const [findQuery, setFindQuery] = useState('')
+  const [stagedExts, setStagedExts] = useState<string[]>([])
+  const browseInputRef = useRef<HTMLInputElement>(null)
 
   /* 区块 2：目录规则 */
   const [ruleTypeId, setRuleTypeId] = useState<number | null>(null)
@@ -211,6 +226,47 @@ export default function IndexAdminDialog({ open, onClose, onPausedChange }: Inde
     })
   }
 
+  /* B4-查找添加：暂存/取消暂存候选；确定后逐个 addFileType */
+  const toggleStage = (ext: string) =>
+    setStagedExts((prev) => (prev.includes(ext) ? prev.filter((e) => e !== ext) : [...prev, ext]))
+
+  const onConfirmFind = async () => {
+    if (stagedExts.length === 0) return
+    let done = 0
+    try {
+      for (const ext of stagedExts) {
+        const entry = entryForExt(ext)
+        // 目录条目必然存在（候选列表只来自目录）；兜底用大写 ext 作名称
+        await api.addFileType(entry?.name ?? ext.toUpperCase(), [ext])
+        done++
+      }
+      setStagedExts([])
+      setFindOpen(false)
+      await loadTypes()
+      ok(t('idx.addedTypes', [done]))
+    } catch (e) {
+      fail(e, '新增类型失败：')
+    }
+  }
+
+  /* B4-浏览添加：取所选文件扩展名；不在提取器支持列表 → 提示不支持 */
+  const onBrowseFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    // 重置 value：允许重复选择同一文件（否则同一路径不再触发 change）
+    e.target.value = ''
+    const file = e.target.files?.[0]
+    if (!file) return
+    const ext = extOfFileName(file.name)
+    if (!ext) return fail(t('idx.noExt'))
+    if (!SUPPORTED_EXTS.has(ext)) return fail(t('idx.unsupported', [ext]))
+    try {
+      await api.addFileType(entryForExt(ext)?.name ?? ext.toUpperCase(), [ext])
+      await loadTypes()
+      ok(t('idx.addedTypes', [1]))
+    } catch (err) {
+      fail(err, '新增类型失败：')
+    }
+  }
+
   /* --------------------------- 区块 2：规则 --------------------------- */
 
   const onAddRule = async () => {
@@ -341,6 +397,9 @@ export default function IndexAdminDialog({ open, onClose, onPausedChange }: Inde
 
   const pct = progress && progress.total > 0 ? Math.floor((progress.done / progress.total) * 100) : 0
 
+  /* B4：查找候选（打开子面板才算；按 name/ext 过滤） */
+  const candidates = findOpen ? filterCatalog(findQuery) : []
+
   return (
     <div className="idx-overlay" onMouseDown={onClose}>
       <div
@@ -460,6 +519,90 @@ export default function IndexAdminDialog({ open, onClose, onPausedChange }: Inde
                     新增
                   </button>
                 </div>
+
+                <div className="idx-add-row">
+                  <button type="button" className="btn" onClick={() => setFindOpen((v) => !v)}>
+                    {t('idx.addFind')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => browseInputRef.current?.click()}
+                  >
+                    {t('idx.addBrowse')}
+                  </button>
+                  {/* Tauri webview 的 input[type=file] 只给文件名不给路径；本场景只需扩展名 */}
+                  <input
+                    ref={browseInputRef}
+                    type="file"
+                    hidden
+                    onChange={(e) => void onBrowseFile(e)}
+                  />
+                </div>
+
+                {findOpen && (
+                  <div className="idx-find-panel">
+                    <input
+                      className="idx-input grow"
+                      placeholder={t('idx.findTypePlaceholder')}
+                      value={findQuery}
+                      onChange={(e) => setFindQuery(e.target.value)}
+                    />
+                    <div className="idx-find-list">
+                      {candidates.length === 0 ? (
+                        <div className="idx-find-empty">{t('idx.noMatch')}</div>
+                      ) : (
+                        candidates.map((c) => (
+                          <div
+                            key={c.ext}
+                            className={`idx-find-item${stagedExts.includes(c.ext) ? ' staged' : ''}`}
+                            title={c.desc}
+                            onClick={() => toggleStage(c.ext)}
+                          >
+                            <span className="idx-find-name">{c.name}</span>
+                            <span className="idx-find-ext">.{c.ext}</span>
+                            <span className="idx-find-desc">{c.desc}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    <div className="idx-find-staged">
+                      <span className="idx-label">{t('idx.stagedTypes')}</span>
+                      {stagedExts.length === 0 ? (
+                        <span className="idx-find-hint">{t('idx.stagedEmpty')}</span>
+                      ) : (
+                        stagedExts.map((ext) => (
+                          <span key={ext} className="idx-chip">
+                            .{ext}
+                            <button type="button" title={t('idx.unstage')} onClick={() => toggleStage(ext)}>
+                              ✕
+                            </button>
+                          </span>
+                        ))
+                      )}
+                    </div>
+                    <div className="idx-find-actions">
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => {
+                          setFindOpen(false)
+                          setStagedExts([])
+                        }}
+                      >
+                        {t('idx.cancel')}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn primary"
+                        disabled={stagedExts.length === 0}
+                        onClick={() => void onConfirmFind()}
+                      >
+                        {t('idx.confirmAddTypes')}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </section>
             )}
 

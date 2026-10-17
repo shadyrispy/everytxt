@@ -7,6 +7,7 @@
 //!   index_admin.rs 子项 3：索引管理
 //!   preview.rs     子项 4：预览交互全家桶
 //!   shell.rs       子项 5：应用外壳（热键/托盘/皮肤/单实例）
+//!   updater.rs     检测更新（7.9 / B6）
 //!
 //! 新增命令：在所属子项文件内加 `#[tauri::command]` 并在本文件 `handler()` 登记。
 
@@ -17,6 +18,7 @@ pub mod preview;
 pub mod search;
 pub mod shell;
 pub mod shell_integration;
+pub mod updater;
 
 /// 汇总全部 invoke 命令（新增命令在此登记）
 ///
@@ -83,5 +85,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         shell_integration::get_context_menu_installed,
         shell_integration::set_context_menu_enabled,
         shell_integration::take_open_dir,
+        // ---- 7.9 / B6：检测更新 ----
+        updater::check_update,
+        updater::install_update,
     ]
 }

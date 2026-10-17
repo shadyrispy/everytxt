@@ -2,9 +2,9 @@
 //!
 //! 同一业务面（search / stats），两种 transport：
 //!   - [`InprocBackend`]：进程内直调 `stcore::search::search`（GUI 内部、CLI 本地回退）
-//!   - `SocketClient`：连既有单实例 Unix socket（app/src/commands/shell.rs 监听），
-//!     JSON 行协议 `{op:"search"|"stats", ...}` → 一行 JSON 响应
-//!     （仅 Unix：Windows 单实例 socket 未实现，CLI `/s` 回退本地 headless）
+//!   - `SocketClient`：连既有单实例的 JSON 行协议 transport——
+//!     Unix socket（Linux/macOS）/ TCP loopback（Windows，主实例写端口文件），
+//!     协议 `{op:"search"|"stats", ...}` → 一行 JSON 响应，两端逐字节一致
 //!
 //! 意义：CLI `/s`、外部入口、未来 HTTP/Web UI 只需新增/复用 transport，业务零改动。
 //! 不要求 app 现有 tauri 命令迁移。
@@ -17,9 +17,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-#[cfg(unix)]
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::index::IndexManager;
 use crate::search::{search, SearchFilter, SearchHit, SearchMode, SortKey};
@@ -137,20 +135,32 @@ fn dir_size(p: &Path) -> u64 {
 
 /* ------------------------------ Socket 远程 ------------------------------ */
 
-/// 单实例 socket 客户端：连 shell.rs 监听的 Unix socket（JSON 行协议）。
+/// 单实例客户端：连主实例监听的 transport（JSON 行协议），两种 transport：
+/// - Unix：`index_dir/search-tool.sock`（Linux/macOS，见 shell.rs `setup_single_instance_socket`）
+/// - Tcp：`127.0.0.1:<port>`（Windows 无 Unix socket；端口由主实例写入
+///   `index_dir/search-tool.port`，见 shell.rs `setup_single_instance_tcp`）
 ///
 /// 连接/读写失败一律返回 `Err`（调用方——CLI `/s`——回退本地 headless 直跑）。
 ///
-/// 仅 Unix 有真实 transport；Windows 单实例（命名管道）未实现（shell.rs TODO
-/// 同步），`SearchService` 由下方 `#[cfg(not(unix))]` 占位 impl 恒返 Err，
-/// 字段在非 Unix 平台不被读取（CLI 仍会构造并走回退路径）。
-#[cfg_attr(not(unix), allow(dead_code))]
+/// 其它平台（非 Unix 非 Windows）无真实 transport，`SearchService` 由下方
+/// `#[cfg(not(any(unix, windows)))]` 占位 impl 恒返 Err。
+#[cfg_attr(not(any(unix, windows)), allow(dead_code))]
 pub struct SocketClient {
-    path: PathBuf,
+    transport: Transport,
     timeout: Duration,
 }
 
-#[cfg(unix)]
+/// TCP 连接超时（防主实例僵死/端口陈旧时拖住 CLI；loopback 拒绝是即时错误，
+/// 此为兜底上限）。Unix socket 连接由内核快速失败，无需显式超时。
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+
+enum Transport {
+    #[cfg(unix)]
+    Unix(PathBuf),
+    /// Windows 单实例：TCP loopback 地址（`127.0.0.1:<port>`）
+    Tcp(std::net::SocketAddr),
+}
+
 #[derive(Serialize)]
 struct SocketRequest<'a> {
     op: &'static str,
@@ -162,7 +172,6 @@ struct SocketRequest<'a> {
     ext: Option<&'a str>,
 }
 
-#[cfg(unix)]
 #[derive(Deserialize)]
 struct SocketResponse {
     ok: bool,
@@ -172,7 +181,6 @@ struct SocketResponse {
     error: Option<String>,
 }
 
-#[cfg(unix)]
 fn mode_str(mode: SearchMode) -> &'static str {
     match mode {
         SearchMode::Fuzzy => "fuzzy",
@@ -182,17 +190,76 @@ fn mode_str(mode: SearchMode) -> &'static str {
     }
 }
 
+/// 行协议连接：`UnixStream`/`TcpStream` 均实现 `Read + Write`，
+/// 但 `set_read_timeout` 是各自固有方法（不在 `Read`/`Write` trait 上），
+/// 故收进本 trait 以复用同一套请求-响应逻辑。
+trait LineConn: std::io::Read + std::io::Write {
+    fn set_read_timeout(&mut self, d: Option<Duration>) -> std::io::Result<()>;
+}
+
+#[cfg(unix)]
+impl LineConn for std::os::unix::net::UnixStream {
+    fn set_read_timeout(&mut self, d: Option<Duration>) -> std::io::Result<()> {
+        // UFCS 调固有方法（避免与 trait 方法同名歧义）
+        std::os::unix::net::UnixStream::set_read_timeout(self, d)
+    }
+}
+
+impl LineConn for std::net::TcpStream {
+    fn set_read_timeout(&mut self, d: Option<Duration>) -> std::io::Result<()> {
+        std::net::TcpStream::set_read_timeout(self, d)
+    }
+}
+
+/// 发送请求行并读取一行响应（带读超时，防主实例僵死拖住 CLI）。
+/// transport 无关：Unix socket / TCP loopback 共用。
+fn request_over<C: LineConn>(
+    mut conn: C,
+    line: &str,
+    timeout: Duration,
+) -> Result<SocketResponse, String> {
+    use std::io::{BufRead, BufReader};
+
+    conn.set_read_timeout(Some(timeout))
+        .map_err(|e| format!("设置读超时失败: {e}"))?;
+    writeln!(conn, "{line}").map_err(|e| format!("发送请求失败: {e}"))?;
+
+    let mut resp_line = String::new();
+    BufReader::new(conn)
+        .read_line(&mut resp_line)
+        .map_err(|e| format!("读取响应失败: {e}"))?;
+    let resp: SocketResponse =
+        serde_json::from_str(resp_line.trim()).map_err(|e| format!("解析响应失败: {e}"))?;
+    if resp.ok {
+        Ok(resp)
+    } else {
+        Err(resp.error.unwrap_or_else(|| "未知错误".to_string()))
+    }
+}
+
 impl SocketClient {
-    /// `path`：完整 socket 文件路径（app 侧 `shell::socket_path(index_dir)`）。
+    /// Unix transport：`path` 为完整 socket 文件路径（app 侧 `shell::socket_path(index_dir)`）。
+    #[cfg(unix)]
     pub fn new(path: impl Into<PathBuf>) -> Self {
         Self {
-            path: path.into(),
+            transport: Transport::Unix(path.into()),
+            timeout: Duration::from_secs(3),
+        }
+    }
+
+    /// Windows transport：主实例写入端口文件中的 TCP loopback 端口。
+    pub fn new_tcp(port: u16) -> Self {
+        Self {
+            transport: Transport::Tcp(std::net::SocketAddr::new(
+                std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+                port,
+            )),
             timeout: Duration::from_secs(3),
         }
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 impl SearchService for SocketClient {
     fn search(&self, req: ServiceSearchRequest) -> Result<ServiceSearchResponse, String> {
         self.request(
@@ -218,9 +285,9 @@ impl SearchService for SocketClient {
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 impl SocketClient {
-    /// 发送请求行并读取一行响应（带读超时，防主实例僵死拖住 CLI）
+    /// 按 transport 连接并完成一次请求-响应（JSON 行协议）。
     fn request(
         &self,
         op: &'static str,
@@ -229,14 +296,6 @@ impl SocketClient {
         drive: Option<Option<&str>>,
         ext: Option<&str>,
     ) -> Result<SocketResponse, String> {
-        use std::io::{BufRead, BufReader, Write};
-        use std::os::unix::net::UnixStream;
-
-        let mut stream = UnixStream::connect(&self.path)
-            .map_err(|e| format!("连接主实例失败 ({}): {e}", self.path.display()))?;
-        stream
-            .set_read_timeout(Some(self.timeout))
-            .map_err(|e| format!("设置读超时失败: {e}"))?;
         let line = serde_json::to_string(&SocketRequest {
             op,
             query,
@@ -245,31 +304,31 @@ impl SocketClient {
             ext,
         })
         .map_err(|e| format!("序列化请求失败: {e}"))?;
-        writeln!(stream, "{line}").map_err(|e| format!("发送请求失败: {e}"))?;
-
-        let mut resp_line = String::new();
-        BufReader::new(stream)
-            .read_line(&mut resp_line)
-            .map_err(|e| format!("读取响应失败: {e}"))?;
-        let resp: SocketResponse =
-            serde_json::from_str(resp_line.trim()).map_err(|e| format!("解析响应失败: {e}"))?;
-        if resp.ok {
-            Ok(resp)
-        } else {
-            Err(resp.error.unwrap_or_else(|| "未知错误".to_string()))
+        match &self.transport {
+            #[cfg(unix)]
+            Transport::Unix(p) => {
+                let s = std::os::unix::net::UnixStream::connect(p)
+                    .map_err(|e| format!("连接主实例失败 ({}): {e}", p.display()))?;
+                request_over(s, &line, self.timeout)
+            }
+            Transport::Tcp(addr) => {
+                let s = std::net::TcpStream::connect_timeout(addr, CONNECT_TIMEOUT)
+                    .map_err(|e| format!("连接主实例失败 ({addr}): {e}"))?;
+                request_over(s, &line, self.timeout)
+            }
         }
     }
 }
 
-// 非 Unix 占位（Windows 走命名管道，shell.rs TODO 同步）：一律 Err → 调用方本地回退
-#[cfg(not(unix))]
+// 非 Unix 非 Windows 占位：一律 Err → 调用方本地回退
+#[cfg(not(any(unix, windows)))]
 impl SearchService for SocketClient {
     fn search(&self, _req: ServiceSearchRequest) -> Result<ServiceSearchResponse, String> {
-        Err("当前平台不支持 unix socket transport".to_string())
+        Err("当前平台不支持单实例 transport".to_string())
     }
 
     fn stats(&self) -> Result<ServiceStats, String> {
-        Err("当前平台不支持 unix socket transport".to_string())
+        Err("当前平台不支持单实例 transport".to_string())
     }
 }
 
@@ -408,6 +467,57 @@ mod tests {
 
         // 主实例不在：连接失败应返回 Err（CLI 据此回退本地 headless）
         let dead = SocketClient::new(dir.path().join("nonexistent.sock"));
+        assert!(dead.stats().is_err());
+
+        server.join().unwrap();
+    }
+
+    /// TCP loopback roundtrip（Windows transport；std::net 跨平台，故本机可跑）：
+    /// 桩 server 与 Unix 测试同构，验证 `new_tcp` 的端口寻址与请求-响应闭环。
+    #[test]
+    fn socket_client_tcp_roundtrip_stats_and_search() {
+        use std::io::{BufRead, BufReader, Write};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server = std::thread::spawn(move || {
+            for stream in listener.incoming().take(2) {
+                let mut stream = stream.unwrap();
+                let mut line = String::new();
+                BufReader::new(stream.try_clone().unwrap())
+                    .read_line(&mut line)
+                    .unwrap();
+                let req: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
+                let resp = match req["op"].as_str().unwrap() {
+                    "stats" => serde_json::json!({"ok": true, "docs": 7}),
+                    "search" => serde_json::json!({"ok": true}),
+                    other => serde_json::json!({"ok": false, "error": format!("bad op {other}")}),
+                };
+                writeln!(stream, "{}", serde_json::to_string(&resp).unwrap()).unwrap();
+            }
+        });
+
+        let client = SocketClient::new_tcp(port);
+
+        let stats = client.stats().unwrap();
+        assert_eq!(stats.docs, 7);
+
+        let resp = client
+            .search(ServiceSearchRequest {
+                query: "量子计算".to_string(),
+                dir: Some("/tmp".to_string()),
+                ext: Some("txt".to_string()),
+                ..Default::default()
+            })
+            .unwrap();
+        assert!(resp.hits.is_empty(), "tcp search 语义为已呈现");
+
+        // 无监听的端口：连接失败应返回 Err（CLI 据此回退本地 headless）
+        let dead_listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let dead_port = dead_listener.local_addr().unwrap().port();
+        drop(dead_listener);
+        let dead = SocketClient::new_tcp(dead_port);
         assert!(dead.stats().is_err());
 
         server.join().unwrap();
