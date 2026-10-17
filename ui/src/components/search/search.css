@@ -13,10 +13,10 @@
 }
 
 .search-panel .mode-select {
-  height: 24px;
+  height: var(--h-ctrl);
   flex: none;
   border: 1px solid var(--c-border-strong);
-  border-radius: 3px;
+  border-radius: var(--radius);
   background: var(--c-bg-alt);
   color: var(--c-text);
   font-size: var(--fs-ui);
@@ -33,10 +33,10 @@
 .search-panel .search-input {
   flex: 1;
   min-width: 0;
-  height: 24px;
+  height: var(--h-ctrl);
   padding: 0 8px;
   border: 1px solid var(--c-border-strong);
-  border-radius: 3px;
+  border-radius: var(--radius);
   background: var(--c-bg);
   color: var(--c-text);
   font-family: var(--font-ui);
@@ -46,6 +46,7 @@
 .search-panel .search-input:focus {
   outline: none;
   border-color: var(--c-accent);
+  box-shadow: 0 0 0 2px var(--c-accent-soft);
 }
 
 .search-panel .search-input::placeholder {
@@ -94,11 +95,16 @@
 .filter-row .filter-select {
   min-width: 220px;
   max-width: 60%;
-  height: 22px;
+  height: var(--h-ctrl);
   border: 1px solid var(--c-border-strong);
-  border-radius: 3px;
+  border-radius: var(--radius);
   background: var(--c-bg-alt);
   color: var(--c-text);
   font-size: var(--fs-ui);
   cursor: pointer;
+}
+.filter-row .filter-select:focus {
+  outline: none;
+  border-color: var(--c-accent);
+  box-shadow: 0 0 0 2px var(--c-accent-soft);
 }

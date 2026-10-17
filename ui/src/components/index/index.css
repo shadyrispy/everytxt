@@ -33,7 +33,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 32px;
+  height: var(--h-dialog-head);
   padding: 0 10px;
   background: var(--c-bg-alt);
   border-bottom: 1px solid var(--c-border);
@@ -74,11 +74,11 @@
 }
 
 .idx-nav-item {
-  height: 28px;
+  height: var(--h-ctrl-lg);
   padding: 0 10px;
   text-align: left;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--c-text);
   font-size: var(--fs-ui);
@@ -182,10 +182,10 @@
 
 .idx-input,
 .idx-select {
-  height: 24px;
+  height: var(--h-ctrl);
   padding: 0 8px;
   border: 1px solid var(--c-border-strong);
-  border-radius: 3px;
+  border-radius: var(--radius);
   background: var(--c-bg);
   color: var(--c-text);
   font-size: var(--fs-ui);
@@ -203,6 +203,7 @@
 .idx-select:focus {
   outline: none;
   border-color: var(--c-accent);
+  box-shadow: 0 0 0 2px var(--c-accent-soft);
 }
 
 .idx-kv {
@@ -312,15 +313,6 @@
 }
 .idx-msg.err {
   color: var(--c-danger);
-}
-
-/* 危险按钮：仅改前景/描边，底色沿用 .btn */
-.idx-dialog .btn.danger {
-  color: var(--c-danger);
-  border-color: var(--c-danger);
-}
-.idx-dialog .btn.danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--c-danger) 12%, var(--c-bg-alt));
 }
 
 /* --------------------------- 二次确认条 --------------------------- */

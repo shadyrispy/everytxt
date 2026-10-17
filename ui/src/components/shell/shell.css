@@ -164,13 +164,13 @@
 }
 
 .tb-btn {
-  width: 26px;
-  height: 26px;
+  width: var(--h-ctrl-lg);
+  height: var(--h-ctrl-lg);
   display: inline-grid;
   place-items: center;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 3px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--c-text);
   font-size: 14px;
@@ -295,7 +295,7 @@
 .dialog-head {
   display: flex;
   align-items: center;
-  height: 34px;
+  height: var(--h-dialog-head);
   padding: 0 10px;
   background: var(--c-bg-alt);
   border-bottom: 1px solid var(--c-border);
@@ -342,10 +342,10 @@
 }
 .theme-choice {
   flex: 0 0 auto;
-  height: 28px;
+  height: var(--h-ctrl-lg);
   padding: 0 16px;
   border: 1px solid var(--c-border-strong);
-  border-radius: 3px;
+  border-radius: var(--radius);
   background: var(--c-bg-alt);
   color: var(--c-text);
   cursor: default;
@@ -386,10 +386,10 @@
 }
 .hotkey-input {
   width: 180px;
-  height: 24px;
+  height: var(--h-ctrl);
   padding: 0 8px;
   border: 1px solid var(--c-border-strong);
-  border-radius: 3px;
+  border-radius: var(--radius);
   background: var(--c-bg-sunken);
   color: var(--c-text);
   font-family: var(--font-mono);
@@ -397,8 +397,9 @@
   cursor: default;
 }
 .hotkey-input:focus {
-  outline: 2px solid var(--c-accent-soft);
+  outline: none;
   border-color: var(--c-accent);
+  box-shadow: 0 0 0 2px var(--c-accent-soft);
 }
 
 .dialog-foot {

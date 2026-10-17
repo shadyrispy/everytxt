@@ -441,7 +441,7 @@ export default function ResultList(props: ResultListProps) {
         <div className="pager">
           <button
             type="button"
-            className="pager-btn"
+            className="btn"
             disabled={page === 0}
             onClick={() => onPageChange(page - 1)}
           >
@@ -452,7 +452,7 @@ export default function ResultList(props: ResultListProps) {
           </span>
           <button
             type="button"
-            className="pager-btn"
+            className="btn"
             disabled={(page + 1) * pageSize >= total}
             onClick={() => onPageChange(page + 1)}
           >

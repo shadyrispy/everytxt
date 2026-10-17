@@ -182,7 +182,7 @@ export default function FilterRow({
 
       <button
         type="button"
-        className="filter-bookmark-btn"
+        className="btn"
         title="书签管理"
         style={{ marginLeft: 'auto' }}
         onClick={onOpenBookmarks}

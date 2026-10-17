@@ -67,10 +67,10 @@ export default function BookmarkPanel({ open, onClose }: BookmarkPanelProps) {
                 <div className="bookmark-path">{b.path}</div>
               </div>
               <div className="bookmark-actions">
-                <button type="button" onClick={() => void files.openFile(b.path).catch(() => {})}>
+                <button type="button" className="btn" onClick={() => void files.openFile(b.path).catch(() => {})}>
                   打开
                 </button>
-                <button type="button" className="danger" onClick={() => remove(b.path)}>
+                <button type="button" className="btn danger" onClick={() => remove(b.path)}>
                   删除
                 </button>
               </div>
