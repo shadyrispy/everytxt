@@ -6,6 +6,8 @@
 //! 配置持久化：`<index_dir>/app.json`（与 stcore::config 的 config.json 分离，避免耦合）
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use tauri::menu::{Menu, MenuItem};
@@ -205,10 +207,8 @@ pub fn register_hotkeys(app: &AppHandle, bindings: &[(String, String)]) -> Vec<S
         // 解析（如 "Ctrl+Shift+Space" / "F3"）失败或已被占用都会返回 Err
         let r = gs.on_shortcut(accel, move |_app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {
-                if let Some(w) = handle.get_webview_window("main") {
-                    let _ = w.show();
-                    let _ = w.set_focus();
-                }
+                // B1 方案 b：唤出全部窗口 + 聚焦最近活跃（原硬编码 "main"）
+                let _ = show_recent_windows(&handle);
             }
         });
         if let Err(e) = r {
@@ -273,12 +273,96 @@ pub fn apply_global_hotkeys(
     }
 }
 
-#[tauri::command]
-pub fn show_main_window(app: AppHandle) -> Result<(), String> {
-    if let Some(w) = app.get_webview_window("main") {
-        w.show().map_err(|e| e.to_string())?;
+/* --------------------- B1：多窗口（label `search-N`） --------------------- */
+
+/// 最近活跃窗口 label（托盘/热键/CLI 转发的聚焦目标）。
+/// `None` = 尚无聚焦记录（启动初期）→ 读取端回退 `"main"`。
+static LAST_FOCUSED: Mutex<Option<String>> = Mutex::new(None);
+
+/// 副窗 label 计数（单调递增 → 进程内唯一，规避同 label 二次 build 的
+/// `WindowLabelAlreadyExists`）。
+static SEARCH_WIN_SEQ: AtomicUsize = AtomicUsize::new(0);
+
+/// 解析聚焦目标：记录非空 → 用之；否则回退 `"main"`。
+fn resolve_recent_label(last: Option<&str>) -> String {
+    match last {
+        Some(l) if !l.trim().is_empty() => l.to_string(),
+        _ => "main".to_string(),
+    }
+}
+
+/// 取最近活跃 label（毒化恢复而非 unwrap：持锁 panic 不应让托盘/热键
+/// 永久失效，同 state.rs 锁毒化修复模式）。
+fn last_focused_label() -> Option<String> {
+    LAST_FOCUSED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+}
+
+fn set_last_focused_label(label: &str) {
+    *LAST_FOCUSED.lock().unwrap_or_else(|e| e.into_inner()) = Some(label.to_string());
+}
+
+/// 若当前记录指向 `label` 则清条（窗口销毁时防悬空 label）。
+fn clear_focused_if(label: &str) {
+    let mut guard = LAST_FOCUSED.lock().unwrap_or_else(|e| e.into_inner());
+    if guard.as_deref() == Some(label) {
+        *guard = None;
+    }
+}
+
+/// 给窗口注册焦点追踪（B1 方案 b，托盘/热键/CLI 转发的聚焦依据）：
+/// `Focused(true)` → 记 [`LAST_FOCUSED`]；`Destroyed` 且记录指向本窗 → 清条。
+///
+/// `on_window_event` 闭包不接收 label 参数 → 捕获 `win.label()`。
+pub fn track_window_focus(win: &tauri::WebviewWindow) {
+    let label = win.label().to_string();
+    win.on_window_event(move |event| match event {
+        tauri::WindowEvent::Focused(true) => set_last_focused_label(&label),
+        tauri::WindowEvent::Destroyed => clear_focused_if(&label),
+        _ => {}
+    });
+}
+
+/// 显示**全部**窗口 + 聚焦最近活跃（B1 方案 b：托盘/热键/CLI 共用语义）。
+fn show_recent_windows(app: &AppHandle) -> Result<(), String> {
+    let target = resolve_recent_label(last_focused_label().as_deref());
+    for (_, w) in app.webview_windows() {
+        let _ = w.show();
+    }
+    if let Some(w) = app.get_webview_window(&target) {
         w.set_focus().map_err(|e| e.to_string())?;
     }
+    Ok(())
+}
+
+/// 托盘「显示」/ 左键单击 / 全局热键 `showWindow` 共用入口。
+/// 语义（B1 方案 b，2026-10-18 产品确认）：唤出全部窗口 + 聚焦最近活跃；
+/// 原「只显示 main」见 `everytxt-b1-multiwindow-design.md` §4 决策记录。
+#[tauri::command]
+pub fn show_main_window(app: AppHandle) -> Result<(), String> {
+    show_recent_windows(&app)
+}
+
+/// B1（手册 3.8）：新建搜索窗口。
+///
+/// label `search-N`（N 单调递增 → 进程内唯一）；同指 `index.html`，
+/// 每 webview 独立 JS context，前端态天然隔离（label 仅作调试分辨）。
+/// 副窗 = 临时查询窗（方案 b）：关闭即销毁，**不**注册 close_to_tray
+/// （[`setup_close_to_tray`] 只给 `"main"` 注册，副窗走默认关闭路径）。
+#[tauri::command]
+pub fn create_search_window(app: AppHandle) -> Result<(), String> {
+    let n = SEARCH_WIN_SEQ.fetch_add(1, Ordering::Relaxed) + 1;
+    let label = format!("search-{n}");
+    let win =
+        tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App("index.html".into()))
+            .title("search-tool")
+            .inner_size(1200.0, 760.0)
+            .min_inner_size(900.0, 560.0)
+            .build()
+            .map_err(|e| e.to_string())?;
+    track_window_focus(&win);
     Ok(())
 }
 
@@ -308,7 +392,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let mut builder = TrayIconBuilder::new()
         .tooltip("search-tool 全文搜索")
         .menu(&menu)
-        // 左键单击只显示主窗口，不弹出菜单
+        // 左键单击唤出全部窗口（不弹菜单）；语义见 show_main_window
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             TRAY_SHOW => {
@@ -321,7 +405,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
-            // 左键抬起 → 显示并聚焦主窗口
+            // 左键抬起 → 唤出全部窗口 + 聚焦最近活跃（B1 方案 b）
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,
@@ -568,11 +652,17 @@ fn handle_socket_op(app: &AppHandle, line: &str, mut w: impl std::io::Write) {
                 } else {
                     {
                         use tauri::Emitter as _;
-                        if let Some(win) = app.get_webview_window("main") {
+                        // B1 P4：定向最近活跃窗口 emit（原 app.emit 广播 → 所有
+                        // 窗口同时跑同一查询）；无记录/目标已销毁回退 main
+                        let target = resolve_recent_label(last_focused_label().as_deref());
+                        if let Some(win) = app
+                            .get_webview_window(&target)
+                            .or_else(|| app.get_webview_window("main"))
+                        {
                             let _ = win.show();
                             let _ = win.set_focus();
+                            let _ = win.emit("external-search", payload);
                         }
-                        let _ = app.emit("external-search", payload);
                     }
                     serde_json::json!({"ok": true}).to_string()
                 }
@@ -591,4 +681,39 @@ fn handle_socket_op(app: &AppHandle, line: &str, mut w: impl std::io::Write) {
         }
     };
     let _ = writeln!(w, "{resp}");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_recent_label_falls_back_to_main() {
+        assert_eq!(resolve_recent_label(None), "main");
+        assert_eq!(resolve_recent_label(Some("")), "main");
+        assert_eq!(resolve_recent_label(Some("   ")), "main");
+        assert_eq!(resolve_recent_label(Some("search-3")), "search-3");
+        assert_eq!(resolve_recent_label(Some("main")), "main");
+    }
+
+    /// static 被全部测试共享 → set/get/clear 合并单测试顺序断言，
+    /// 规避 cargo test 多线程下的测试间竞态。
+    #[test]
+    fn last_focused_set_get_clear() {
+        set_last_focused_label("search-7");
+        assert_eq!(last_focused_label().as_deref(), Some("search-7"));
+
+        // 非当前记录 → 不动
+        clear_focused_if("search-1");
+        assert_eq!(last_focused_label().as_deref(), Some("search-7"));
+
+        // 当前记录 → 清条（回退 main 由 resolve_recent_label 负责）
+        clear_focused_if("search-7");
+        assert_eq!(last_focused_label(), None);
+
+        // 清条后 set 新值可再写
+        set_last_focused_label("search-8");
+        assert_eq!(last_focused_label().as_deref(), Some("search-8"));
+        clear_focused_if("search-8");
+    }
 }

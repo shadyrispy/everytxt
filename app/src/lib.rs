@@ -51,7 +51,10 @@ pub fn run(open_dir: Option<String>) {
             if let Some(args) = webview_browser_args() {
                 win = win.additional_browser_args(&args);
             }
-            win.build()?;
+            let main_win = win.build()?;
+            // B1：main 窗口焦点追踪（托盘/热键/CLI 转发「聚焦最近活跃」的依据，
+            // 副窗由 create_search_window 建窗时各自注册）
+            commands::shell::track_window_focus(&main_win);
 
             // R2：先起索引任务队列（须早于任何 submit）
             indexer_queue::init(app.handle().clone());

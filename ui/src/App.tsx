@@ -516,8 +516,6 @@ export default function App() {
   /* --------------------- 全局快捷键 ---------------------
    * 统一在 window keydown 分派；除明确允许者外，焦点在 INPUT/TEXTAREA 时不拦截。
    * 显式不实现（TODO）：
-   *   - Ctrl+N 新建搜索多窗口 → 后续 B1 批次
-   *   - Ctrl+U 检测更新 → 后续 B6 批次
    *   - Alt+Q 全局唤醒 → 已由后端 global-shortcut 实现，前端不处理
    */
   useEffect(() => {
@@ -560,6 +558,15 @@ export default function App() {
             window.alert(msg.includes('未配置') ? t('update.notConfigured') : t('update.failed', { error: msg }))
           }
         })()
+        return
+      }
+      /* 2c. Ctrl+N 新建搜索窗口（B1 多窗口；失败仅错误条提示，不打断当前窗口操作） */
+      if (ctrl && !e.shiftKey && key === 'n') {
+        e.preventDefault()
+        void api.createSearchWindow().catch((err) => {
+          console.error('create_search_window failed', err)
+          setError(`新建搜索窗口失败：${errMsg(err)}`)
+        })
         return
       }
       /* （Ctrl+Shift+C 复制路径，见第 4 组；置于 Ctrl+C 之前） */

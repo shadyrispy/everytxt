@@ -45,3 +45,10 @@ export function getContextMenuInstalled(): Promise<boolean> {
 export function setContextMenuEnabled(enabled: boolean): Promise<string> {
   return invoke<string>('set_context_menu_enabled', { enabled })
 }
+
+/* ---------------- B1：多窗口（新建搜索窗口） ---------------- */
+
+/** 新建一个独立搜索窗口（各 webview 独立 JS context，前端态天然隔离） */
+export function createSearchWindow(): Promise<void> {
+  return invoke<void>('create_search_window')
+}

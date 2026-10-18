@@ -80,6 +80,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         shell::set_autostart,
         shell::apply_global_hotkeys,
         shell::show_main_window,
+        shell::create_search_window,
         shell::hide_main_window,
         // ---- P5：右击搜索（shell 集成） ----
         shell_integration::get_context_menu_installed,
