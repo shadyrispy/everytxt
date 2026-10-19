@@ -44,6 +44,7 @@
 }
 
 .idx-close {
+  position: relative;
   margin-left: auto;
   border: none;
   background: transparent;
@@ -51,6 +52,16 @@
   cursor: pointer;
   font-size: 13px;
   line-height: 1;
+  min-width: 20px;
+  min-height: 20px;
+  padding: 2px 3px;
+  border-radius: 3px;
+}
+/* 扩点击热区（审计 #5：原 23×15px 高度不足） */
+.idx-close::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
 }
 .idx-close:hover {
   color: var(--c-text);

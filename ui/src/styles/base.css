@@ -227,3 +227,13 @@ body {
   border-color: var(--c-danger);
   color: #fff;
 }
+
+/* 原生 checkbox 统一尺寸（审计 #4：原生 13×13 偏小） */
+input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  vertical-align: middle;
+  accent-color: var(--c-accent);
+  cursor: pointer;
+}

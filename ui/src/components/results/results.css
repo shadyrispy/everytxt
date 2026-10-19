@@ -127,10 +127,15 @@
   background: var(--c-row-sel);
 }
 
+/* td 必须保持 table-cell：display:flex 会脱离表格布局，
+   table-layout:fixed 的列宽（col-name 38% 等）全部失效回退均分
+   （审计 #1 根因：1200px 下名称列截断为 u...）。ftype 为 inline-flex
+   天然横排，间距用 margin 补回。 */
 .result-row td.col-name {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  vertical-align: middle;
+}
+.result-row td.col-name .ftype {
+  margin-right: 6px;
 }
 .result-row .fname {
   overflow: hidden;
@@ -317,6 +322,10 @@
   font-size: 12px;
   cursor: pointer;
   padding: 0 4px;
+  min-width: 22px;
+  min-height: 20px;
+  line-height: 1;
+  border-radius: 3px;
 }
 .col-toggle-btn:hover {
   color: var(--c-text);

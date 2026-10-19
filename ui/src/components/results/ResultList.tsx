@@ -92,10 +92,10 @@ function ftypeLabel(ext: string): string {
   return ext ? ext.slice(0, 4).toUpperCase() : 'FILE'
 }
 
-/** 路径省略中段（完整路径由 title 呈现） */
+/** 路径省略中段（完整路径由 title 呈现）；keep 下限 4 字符防极窄时不可读 */
 function middleEllipsis(s: string, max: number): string {
   if (s.length <= max) return s
-  const keep = max - 3
+  const keep = Math.max(4, max - 3)
   const head = Math.ceil(keep / 2)
   const tail = keep - head
   return `${s.slice(0, head)}...${s.slice(s.length - tail)}`

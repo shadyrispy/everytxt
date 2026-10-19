@@ -50,18 +50,30 @@
   box-shadow: inset 0 -2px 0 var(--c-accent);
 }
 .preview-tab-title {
+  /* flex item 默认 min-width:auto 不收缩 → ellipsis 失效（审计 #5 硬裁切） */
+  min-width: 0;
+  flex: 0 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .preview-tab-close {
+  position: relative;
   border: none;
   background: transparent;
   color: inherit;
   cursor: pointer;
-  padding: 0 2px;
+  padding: 2px 3px;
+  min-width: 16px;
+  min-height: 16px;
   line-height: 1;
-  font-size: 11px;
+  font-size: 12px;
   border-radius: 3px;
+}
+/* 伪元素扩点击热区（审计 #2：原 13×11px 过小） */
+.preview-tab-close::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
 }
 .preview-tab-close:hover {
   color: var(--c-danger);

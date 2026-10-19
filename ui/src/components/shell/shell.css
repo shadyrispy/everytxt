@@ -304,12 +304,24 @@
   font-weight: 600;
 }
 .dialog-close {
+  position: relative;
   margin-left: auto;
   border: none;
   background: transparent;
   color: var(--c-text-dim);
   font-size: 13px;
   cursor: default;
+  min-width: 20px;
+  min-height: 20px;
+  padding: 2px 3px;
+  line-height: 1;
+  border-radius: 3px;
+}
+/* 扩点击热区（对齐 idx-close，防同类审计问题） */
+.dialog-close::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
 }
 .dialog-close:hover {
   color: var(--c-text);
