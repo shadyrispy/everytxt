@@ -92,15 +92,18 @@
   text-align: center;
 }
 
-/* 列宽 */
-.result-table td.col-name {
-  width: 38%;
+/* 列宽权威位置：table-layout:fixed 下只有「首行 thead th（或 colgroup）」的宽度生效，
+   body 行 td 的 width 是死代码（曾导致 38% 意图落空、名称列被三列均分）。
+   名称列从宽（42%）：文件名优先完整可读；修改日期取 110px 固定宽
+   （容 "YYYY-MM-DD HH:mm" ≈100px，最小窗下不被比例压缩）；路径列自适应剩余空间
+   （省略中段 + title 呈现全路径）。 */
+.result-table thead th.th-name {
+  width: 42%;
 }
-.result-table td.col-mtime {
-  width: 20%;
+.result-table thead th.th-mtime {
+  width: 110px;
 }
 .result-table td.col-hits {
-  width: 46px;
   text-align: center;
 }
 
@@ -128,8 +131,8 @@
 }
 
 /* td 必须保持 table-cell：display:flex 会脱离表格布局，
-   table-layout:fixed 的列宽（col-name 38% 等）全部失效回退均分
-   （审计 #1 根因：1200px 下名称列截断为 u...）。ftype 为 inline-flex
+   table-layout:fixed 的列宽全部失效回退均分（审计 #1 根因之一）。
+   列宽权威在 thead th（见上方「列宽权威位置」注释）。ftype 为 inline-flex
    天然横排，间距用 margin 补回。 */
 .result-row td.col-name {
   vertical-align: middle;
@@ -311,7 +314,6 @@
   width: 76px;
 }
 .result-table td.col-size {
-  width: 76px;
   color: var(--c-text-dim);
 }
 

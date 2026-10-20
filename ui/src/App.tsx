@@ -20,7 +20,7 @@ import type {
   ThemeMode,
   ToolbarAction,
 } from './types'
-import { errMsg } from './util'
+import { baseName, errMsg } from './util'
 import AppToolbar from './components/shell/AppToolbar'
 import MenuBar from './components/shell/MenuBar'
 import SettingsDialog from './components/shell/SettingsDialog'
@@ -241,7 +241,7 @@ export default function App() {
     const r = results[activeIdx]
     if (!r) return
     setShowWelcome(false)
-    setTabs((prev) => (prev.some((t) => t.id === r.path) ? prev : [...prev, { id: r.path, path: r.path, title: r.name }]))
+    setTabs((prev) => (prev.some((t) => t.id === r.path) ? prev : [...prev, { id: r.path, path: r.path, title: baseName(r.name) }]))
     setActiveTab(r.path)
   }, [activeIdx, results])
 

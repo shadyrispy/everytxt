@@ -21,6 +21,18 @@ export function formatSize(bytes: number): string {
   return `${i === 0 ? v : v.toFixed(1)} ${units[i]}`
 }
 
+/**
+ * 展示名取 basename（同时兼容 `/` 与 `\` 分隔符）。
+ * 后端 SearchHit.title 由 path.rsplit('/') 切出，Windows 混合分隔符路径下会得到
+ * "目录\文件"（反斜杠根目录时甚至是全路径）；目录信息由路径列/title 呈现，
+ * 名称列只展示文件名本身，避免浪费列宽。
+ */
+export function baseName(nameOrPath: string): string {
+  if (!nameOrPath) return nameOrPath
+  const i = Math.max(nameOrPath.lastIndexOf('/'), nameOrPath.lastIndexOf('\\'))
+  return i >= 0 ? nameOrPath.slice(i + 1) : nameOrPath
+}
+
 export function errMsg(e: unknown): string {
   if (e instanceof Error) return e.message
   if (typeof e === 'string') return e

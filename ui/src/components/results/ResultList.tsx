@@ -14,7 +14,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { FileOpResult, SearchResult, SearchMode, SortKey } from '../../types'
-import { errMsg, formatDate, formatSize } from '../../util'
+import { baseName, errMsg, formatDate, formatSize } from '../../util'
 import * as files from '../../api/files'
 import './results.css'
 
@@ -155,8 +155,9 @@ export default function ResultList(props: ResultListProps) {
     idx.sort((a, b) => {
       let cmp: number
       if (sort === 'name') {
-        const va = results[a].name.toLowerCase()
-        const vb = results[b].name.toLowerCase()
+        // 与名称列展示保持一致：按 basename 排序（后端 title 在 Windows 上含目录段）
+        const va = baseName(results[a].name).toLowerCase()
+        const vb = baseName(results[b].name).toLowerCase()
         cmp = va < vb ? -1 : va > vb ? 1 : 0
       } else {
         cmp = results[a].mtime - results[b].mtime
@@ -334,10 +335,10 @@ export default function ResultList(props: ResultListProps) {
 
   /* -------------------------------- 渲染 -------------------------------- */
 
-  const sortTh = (label: string, k: 'name' | 'mtime') => {
+  const sortTh = (label: string, k: 'name' | 'mtime', cls: string) => {
     const active = sort === k
     return (
-      <th className={`th-sort${active ? ' active' : ''}`} onClick={() => clickSort(k)} title={`按${label}排序`}>
+      <th className={`th-sort ${cls}${active ? ' active' : ''}`} onClick={() => clickSort(k)} title={`按${label}排序`}>
         {label}
         <span className="sort-arrow">{active ? (dir === 'asc' ? '▲' : '▼') : ''}</span>
       </th>
@@ -358,8 +359,8 @@ export default function ResultList(props: ResultListProps) {
       <table className="result-table">
         <thead>
           <tr>
-            {cols.name && sortTh('名称', 'name')}
-            {cols.mtime && sortTh('修改日期', 'mtime')}
+            {cols.name && sortTh('名称', 'name', 'th-name')}
+            {cols.mtime && sortTh('修改日期', 'mtime', 'th-mtime')}
             {cols.path && <th className="th-plain">路径</th>}
             {cols.size && <th className="th-plain th-size">大小</th>}
             {cols.hits && <th className="th-plain th-hits">命中</th>}
@@ -414,10 +415,10 @@ export default function ResultList(props: ResultListProps) {
                       <span className="ftype" data-kind={ftypeKind(ext)}>
                         {ftypeLabel(ext)}
                       </span>
-                      <span className="fname">{r.name}</span>
+                      <span className="fname">{baseName(r.name)}</span>
                     </td>
                   )}
-                  {cols.mtime && <td className="col-mtime">{formatDate(r.mtime)}</td>}
+                  {cols.mtime && <td className="col-mtime" title={formatDate(r.mtime)}>{formatDate(r.mtime)}</td>}
                   {cols.path && (
                     <td className="col-path" title={r.path}>
                       {middleEllipsis(r.path, 56)}
@@ -464,7 +465,7 @@ export default function ResultList(props: ResultListProps) {
 
       {hover && results[hover.idx] && (
         <div className="hover-preview" style={{ left: hover.left, top: hover.top }}>
-          <div className="hover-preview-name">{results[hover.idx].name}</div>
+          <div className="hover-preview-name">{baseName(results[hover.idx].name)}</div>
           <div className="hover-preview-snippet">{results[hover.idx].snippet || '（无预览片段）'}</div>
         </div>
       )}
