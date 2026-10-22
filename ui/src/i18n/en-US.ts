@@ -20,6 +20,7 @@ const enUS: Record<string, string> = {
   'menu.view.nextPage': 'Next Result',
   'menu.view.lineNumbers': 'Line Numbers',
   'menu.view.wrap': 'Wrap Lines',
+  'menu.view.singlePreview': 'Single Document Preview',
   'menu.view.zoomIn': 'Zoom In',
   'menu.view.zoomOut': 'Zoom Out',
   'menu.view.zoomReset': 'Reset Font Size',

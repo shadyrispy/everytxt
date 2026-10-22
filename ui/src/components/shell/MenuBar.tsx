@@ -66,6 +66,7 @@ function buildMenus(t: TFn, view?: PreviewViewOpts): MenuDef[] {
         { label: t('menu.view.nextPage'), accel: 'F3', action: 'view.nextPage' },
         { label: t('menu.view.lineNumbers'), checked: view?.lineNumbers, action: 'view.lineNumbers' },
         { label: t('menu.view.wrap'), checked: view?.wrap, action: 'view.wrap' },
+        { label: t('menu.view.singlePreview'), checked: view?.singlePreview, action: 'view.singlePreview' },
         { label: t('menu.view.zoomIn'), accel: 'Ctrl+↑', action: 'view.zoomIn' },
         { label: t('menu.view.zoomOut'), accel: 'Ctrl+↓', action: 'view.zoomOut' },
         { label: t('menu.view.zoomReset'), accel: 'Ctrl+0', action: 'view.zoomReset' },

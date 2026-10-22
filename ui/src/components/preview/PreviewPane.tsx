@@ -47,7 +47,7 @@ export interface PreviewPaneProps {
 }
 
 /** 视图缺省值（与冻结契约一致；App 未下发 view 时回退到此） */
-const DEFAULT_VIEW: PreviewViewOpts = { lineNumbers: true, wrap: false, fontSize: 13 }
+const DEFAULT_VIEW: PreviewViewOpts = { lineNumbers: true, wrap: false, fontSize: 13, singlePreview: false }
 /** 字号范围 clamp */
 const FONT_MIN = 8
 const FONT_MAX = 32

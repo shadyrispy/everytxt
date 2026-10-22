@@ -304,6 +304,9 @@ export default function ResultList(props: ResultListProps) {
         case 'copy':
           await files.copyPaths(targets)
           break
+        case 'copyName':
+          await files.copyFileNames(targets)
+          break
         case 'trash': {
           const r = await files.moveToTrash(targets)
           notify(r, '移入回收站')
@@ -480,6 +483,9 @@ export default function ResultList(props: ResultListProps) {
           </button>
           <button className="menu-item" onClick={() => void doOp('copy', menu.targets)}>
             复制路径
+          </button>
+          <button className="menu-item" onClick={() => void doOp('copyName', menu.targets)}>
+            复制文件名称
           </button>
           <div className="menu-sep" />
           <button

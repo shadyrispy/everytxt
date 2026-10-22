@@ -20,6 +20,7 @@ const zhCN: Record<string, string> = {
   'menu.view.nextPage': '下一个结果',
   'menu.view.lineNumbers': '显示行号',
   'menu.view.wrap': '自动换行',
+  'menu.view.singlePreview': '单文档预览',
   'menu.view.zoomIn': '放大',
   'menu.view.zoomOut': '缩小',
   'menu.view.zoomReset': '重置字号',

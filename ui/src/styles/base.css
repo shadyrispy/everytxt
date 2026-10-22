@@ -88,9 +88,10 @@ body {
   height: 100%;
 }
 
+/* 主区：结果 | 分隔条 | 预览；预览宽度由 --preview-w 驱动（P1 可拖拽，localStorage 持久化） */
 .app-main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 46%);
+  grid-template-columns: minmax(0, 1fr) 5px minmax(280px, var(--preview-w, 46%));
   min-height: 0;
   gap: 0;
   border-top: 1px solid var(--c-border);
@@ -98,6 +99,21 @@ body {
 
 .app-main.single {
   grid-template-columns: minmax(0, 1fr);
+}
+
+/* 拖拽分隔条（P1）：仅 double 布局渲染；热区 5px，hover 染主色 */
+.app-splitter {
+  cursor: col-resize;
+  background: transparent;
+  touch-action: none;
+}
+.app-splitter:hover {
+  background: var(--c-accent);
+}
+/* 拖拽中：全窗口光标 + 禁选中，避免拖出热区后闪烁 */
+body.col-resizing {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 
 /* 通用滚动容器 */

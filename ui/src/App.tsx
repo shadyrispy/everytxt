@@ -4,7 +4,7 @@
  * 五子项在此接线，组件本体各自归属见 ui-redesign.md。
  * 本文件只做：状态机 + 事件分发 + 组件组合，业务实现一律下沉到子项组件。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import * as api from './api'
 import type {
@@ -40,8 +40,8 @@ import { useI18n } from './i18n'
 const SEARCH_DEBOUNCE_MS = 150
 const PAGE_SIZE = 50
 
-/** 预览显示默认值（行号开、不换行、13px） */
-const DEFAULT_PREVIEW_VIEW: PreviewViewOpts = { lineNumbers: true, wrap: false, fontSize: 13 }
+/** 预览显示默认值（行号开、不换行、13px；多 Tab 模式） */
+const DEFAULT_PREVIEW_VIEW: PreviewViewOpts = { lineNumbers: true, wrap: false, fontSize: 13, singlePreview: false }
 /** 正文字号上下限 */
 const FONT_SIZE_MIN = 8
 const FONT_SIZE_MAX = 32
@@ -92,7 +92,38 @@ export default function App() {
   const [view, setView] = useState<PreviewViewOpts>(DEFAULT_PREVIEW_VIEW)
   const patchView = useCallback((p: Partial<PreviewViewOpts>) => setView((v) => ({ ...v, ...p })), [])
 
-  /* --------------------------- 内部 ref --------------------------- */
+  /* ------------------- 预览窗格宽度（P1 可拖拽分隔条） ------------------- */
+  /** 预览占比（0..1）；localStorage 持久化，拖拽中 clamp [0.2, 0.8] */
+  const [previewPct, setPreviewPct] = useState(() => {
+    const raw = localStorage.getItem('everytxt.previewPct')
+    const n = raw ? Number(raw) : NaN
+    return Number.isFinite(n) ? clamp(n, 0.2, 0.8) : 0.46
+  })
+  const mainRef = useRef<HTMLElement | null>(null)
+
+  const startPreviewDrag = useCallback((e: ReactPointerEvent) => {
+    e.preventDefault()
+    const el = mainRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const onMove = (ev: PointerEvent) => {
+      setPreviewPct(clamp((rect.right - ev.clientX) / rect.width, 0.2, 0.8))
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      document.body.classList.remove('col-resizing')
+      setPreviewPct((p) => {
+        localStorage.setItem('everytxt.previewPct', String(p))
+        return p
+      })
+    }
+    document.body.classList.add('col-resizing')
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }, [])
+
+/* --------------------------- 内部 ref --------------------------- */
   const searchSeq = useRef(0)
   const manualRef = useRef(false)
   const [submitTick, setSubmitTick] = useState(0)
@@ -235,15 +266,27 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [query, mode, reverse, dir, fileType, sort, page, timeRange, submitTick, loadStats])
 
-  /* 选中行变化 → 打开/切换预览 Tab */
+  /* 选中行变化 → 打开/切换预览 Tab
+     singlePreview 开启时替换当前活动 Tab（P7 / 3.6.1）；否则新开 Tab */
   useEffect(() => {
     if (activeIdx < 0 || activeIdx >= results.length) return
     const r = results[activeIdx]
     if (!r) return
     setShowWelcome(false)
-    setTabs((prev) => (prev.some((t) => t.id === r.path) ? prev : [...prev, { id: r.path, path: r.path, title: baseName(r.name) }]))
+    const tab: DocTab = { id: r.path, path: r.path, title: baseName(r.name) }
+    if (view.singlePreview) {
+      setTabs((prev) => {
+        const cur = prev.find((t) => t.id === activeTab) ?? prev[prev.length - 1]
+        if (!cur) return [tab]
+        if (cur.id === tab.id) return prev
+        return prev.map((t) => (t.id === cur.id ? tab : t))
+      })
+    } else {
+      setTabs((prev) => (prev.some((t) => t.id === r.path) ? prev : [...prev, tab]))
+    }
     setActiveTab(r.path)
-  }, [activeIdx, results])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeIdx, results, view.singlePreview])
 
   const selectedPaths = useMemo(() => Array.from(selected), [selected])
 
@@ -383,6 +426,9 @@ export default function App() {
         case 'view.wrap':
           patchView({ wrap: !view.wrap })
           break
+        case 'view.singlePreview':
+          patchView({ singlePreview: !view.singlePreview })
+          break
         case 'view.zoomIn':
           patchView({ fontSize: clamp(view.fontSize + 1, FONT_SIZE_MIN, FONT_SIZE_MAX) })
           break
@@ -513,6 +559,26 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dir, fileType])
 
+  /* ------------------- 移动到目录（Ctrl+M / Ctrl+X 共用；M1） ------------------- */
+
+  const moveToFolder = useCallback(() => {
+    if (!selectedPaths.length) return
+    void (async () => {
+      try {
+        const r = await api.transferFiles(selectedPaths, '', true)
+        const failed = new Set(r.failed.map((f) => f.path))
+        if (r.failed.length > 0) {
+          const f = r.failed[0]
+          setError(`移动到目录：成功 ${r.ok} 项，失败 ${r.failed.length} 项。\n首个错误：${f.path}\n${f.error}`)
+        }
+        onRefreshAfterOp(selectedPaths.filter((p) => !failed.has(p)))
+        void loadStats()
+      } catch (err) {
+        setError(`移动到目录失败：${errMsg(err)}`)
+      }
+    })()
+  }, [selectedPaths, onRefreshAfterOp, loadStats])
+
   /* --------------------- 全局快捷键 ---------------------
    * 统一在 window keydown 分派；除明确允许者外，焦点在 INPUT/TEXTAREA 时不拦截。
    * 显式不实现（TODO）：
@@ -591,11 +657,11 @@ export default function App() {
         setError('已复制路径到剪贴板（系统剪贴板文件复制在 Linux 下降级，见 R9）')
         return
       }
-      /* 5. Ctrl+X 剪切（Linux 降级提示） */
+      /* 5. Ctrl+X 移动到目录（M1：原"剪切降级提示"死键，改为与 Ctrl+M 同语义） */
       if (ctrl && key === 'x') {
         if (inField) return
         e.preventDefault()
-        setError('剪切在 Linux 下降级，请使用「移动到…」(Ctrl+M)')
+        moveToFolder()
         return
       }
       /* 6. Ctrl+F 文档内查找 */
@@ -631,26 +697,11 @@ export default function App() {
         }
         return
       }
-      /* 9. Ctrl+M 移动到目录（成功路径收尾，与 SelectionBar 语义一致） */
+      /* 9. Ctrl+M 移动到目录（与 Ctrl+X、SelectionBar 同语义） */
       if (ctrl && key === 'm') {
         if (inField) return
         e.preventDefault()
-        if (selectedPaths.length) {
-          void (async () => {
-            try {
-              const r = await api.transferFiles(selectedPaths, '', true)
-              const failed = new Set(r.failed.map((f) => f.path))
-              if (r.failed.length > 0) {
-                const f = r.failed[0]
-                setError(`移动到目录：成功 ${r.ok} 项，失败 ${r.failed.length} 项。\n首个错误：${f.path}\n${f.error}`)
-              }
-              onRefreshAfterOp(selectedPaths.filter((p) => !failed.has(p)))
-              void loadStats()
-            } catch (err) {
-              setError(`移动到目录失败：${errMsg(err)}`)
-            }
-          })()
-        }
+        moveToFolder()
         return
       }
       /* 10. Ctrl+↑ / Ctrl+↓ 缩放；Ctrl+0 重置字号 */
@@ -754,6 +805,7 @@ export default function App() {
     onRefreshAfterOp,
     loadStats,
     dir,
+    moveToFolder,
   ])
 
   /* ------------------------------- 渲染 ------------------------------- */
@@ -805,7 +857,11 @@ export default function App() {
           </div>
         )}
 
-        <main className={`app-main${showWelcome ? ' single' : ''}`}>
+        <main
+          ref={mainRef}
+          className={`app-main${showWelcome ? ' single' : ''}`}
+          style={{ '--preview-w': `${previewPct * 100}%` } as CSSProperties}
+        >
           <section className="result-area">
             <SelectionBar
               paths={selectedPaths}
@@ -834,6 +890,16 @@ export default function App() {
               onRefresh={onRefreshAfterOp}
             />
           </section>
+
+          {!showWelcome && (
+            <div
+              className="app-splitter"
+              role="separator"
+              aria-orientation="vertical"
+              title="拖动调整预览宽度"
+              onPointerDown={startPreviewDrag}
+            />
+          )}
 
           {showWelcome ? (
             <WelcomePage onOpenHomepage={() => window.open('https://github.com/shadyrispy/everytxt', '_blank', 'noopener')} />

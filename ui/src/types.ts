@@ -259,6 +259,8 @@ export interface PreviewViewOpts {
   wrap: boolean
   /** 正文字号 px */
   fontSize: number
+  /** 单文档预览：打开新文件时替换当前 Tab，而非新开 Tab（P7 / 3.6.1） */
+  singlePreview: boolean
 }
 
 /* ===================== 子项 5：应用外壳 ===================== */
@@ -303,6 +305,7 @@ export type MenuAction =
   // 预览显示
   | 'view.lineNumbers'
   | 'view.wrap'
+  | 'view.singlePreview'
   | 'view.zoomIn'
   | 'view.zoomOut'
   | 'view.zoomReset'
