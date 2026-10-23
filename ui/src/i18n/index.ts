@@ -10,18 +10,28 @@
 import { createContext, createElement, useContext, useEffect, useState, type ReactNode } from 'react'
 import { getAppConfig } from '../api/shell'
 import zhCN from './zh-CN'
+import zhTW from './zh-TW'
 import enUS from './en-US'
+import ja from './ja'
 
-export type Lang = 'zh-CN' | 'en-US'
+export type Lang = 'zh-CN' | 'zh-TW' | 'en-US' | 'ja'
 export type Dict = Record<string, string>
 /** 插值变量：对象 `{name}` 或数组 `{1}`（1 起始） */
 export type Vars = Record<string, string | number> | (string | number)[]
 
-export const DICTS: Record<Lang, Dict> = { 'zh-CN': zhCN, 'en-US': enUS }
+export const DICTS: Record<Lang, Dict> = { 'zh-CN': zhCN, 'zh-TW': zhTW, 'en-US': enUS, ja }
 export const DEFAULT_LANG: Lang = 'zh-CN'
 
+/** 语言显示名（设置页下拉用，不受当前语言影响，恒以各自语言呈现） */
+export const LANG_LABELS: Array<{ value: Lang; label: string }> = [
+  { value: 'zh-CN', label: '简体中文' },
+  { value: 'zh-TW', label: '繁體中文' },
+  { value: 'en-US', label: 'English' },
+  { value: 'ja', label: '日本語' },
+]
+
 export function normalizeLang(v: string | null | undefined): Lang {
-  return v === 'en-US' ? 'en-US' : DEFAULT_LANG
+  return v === 'en-US' || v === 'ja' || v === 'zh-TW' ? v : DEFAULT_LANG
 }
 
 /** `{1}` / `{name}` 占位替换；缺参保留原占位符 */

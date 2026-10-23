@@ -13,6 +13,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import type { AppConfig, ThemeMode } from '../../types'
+import { LANG_LABELS } from '../../i18n'
 import * as api from '../../api/shell'
 import * as updaterApi from '../../api/updater'
 import { errMsg } from '../../util'
@@ -223,6 +224,22 @@ export default function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                     </select>
                   </label>
                 )}
+                {/* P4（手册 7.1）：界面语言；I18nProvider 启动读一次，切换后重启生效 */}
+                <label className="switch-row">
+                  <span>界面语言（重启后生效）</span>
+                  <select
+                    className="filter-select"
+                    style={{ minWidth: 110 }}
+                    value={cfg.language}
+                    onChange={(e) => patch({ language: e.target.value as AppConfig['language'] })}
+                  >
+                    {LANG_LABELS.map((l) => (
+                      <option key={l.value} value={l.value}>
+                        {l.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </section>
 
               <section className="settings-section">

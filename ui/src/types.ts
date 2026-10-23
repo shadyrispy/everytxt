@@ -278,7 +278,7 @@ export interface HotkeyBinding {
 
 export interface AppConfig {
   theme: ThemeMode
-  language: 'zh-CN' | 'en-US'
+  language: 'zh-CN' | 'zh-TW' | 'en-US' | 'ja'
   autostart: boolean
   /** 关闭主窗口时最小化到托盘 */
   closeToTray: boolean
