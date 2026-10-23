@@ -263,7 +263,12 @@ export default function ResultList(props: ResultListProps) {
     if (hoverTimer.current !== null) window.clearTimeout(hoverTimer.current)
     hoverTimer.current = window.setTimeout(() => {
       hoverTimer.current = null
-      setHover({ idx, top: rect.bottom + 4, left: rect.left })
+      /* U5：卡片 420px 宽 / ~110px 高，贴近视口右/下缘时向内夹取防裁切 */
+      setHover({
+        idx,
+        top: Math.min(rect.bottom + 4, Math.max(0, window.innerHeight - 130)),
+        left: Math.min(rect.left, Math.max(0, window.innerWidth - 430)),
+      })
     }, 1200)
   }
 
@@ -352,8 +357,9 @@ export default function ResultList(props: ResultListProps) {
 
   const menuStyle = menu
     ? {
+        /* U3：菜单 9 项 + 3 分隔线 ≈ 272px 高，防溢出夹取按 290 计 */
         left: Math.min(menu.x, Math.max(0, window.innerWidth - 176)),
-        top: Math.min(menu.y, Math.max(0, window.innerHeight - 250)),
+        top: Math.min(menu.y, Math.max(0, window.innerHeight - 290)),
       }
     : undefined
 

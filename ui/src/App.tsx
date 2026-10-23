@@ -106,8 +106,11 @@ export default function App() {
     const el = mainRef.current
     if (!el) return
     const rect = el.getBoundingClientRect()
+    /* U2（1080p 半屏审查）：max 上限按像素保底动态计算——结果区至少留 425px
+       （表格固定 px 列 266 + 名称可读 ~150 + splitter 列 5），比例 clamp 兜底 */
+    const hi = Math.min(0.8, Math.max(0.2, (rect.width - 425) / rect.width))
     const onMove = (ev: PointerEvent) => {
-      setPreviewPct(clamp((rect.right - ev.clientX) / rect.width, 0.2, 0.8))
+      setPreviewPct(clamp((rect.right - ev.clientX) / rect.width, 0.2, hi))
     }
     const onUp = () => {
       window.removeEventListener('pointermove', onMove)

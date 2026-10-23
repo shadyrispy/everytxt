@@ -94,11 +94,18 @@
 
 /* 列宽权威位置：table-layout:fixed 下只有「首行 thead th（或 colgroup）」的宽度生效，
    body 行 td 的 width 是死代码（曾导致 38% 意图落空、名称列被三列均分）。
-   名称列从宽（42%）：文件名优先完整可读；修改日期取 110px 固定宽
+   名称列从宽：文件名优先完整可读；修改日期取 110px 固定宽
    （容 "YYYY-MM-DD HH:mm" ≈100px，最小窗下不被比例压缩）；路径列自适应剩余空间
-   （省略中段 + title 呈现全路径）。 */
+   （省略中段 + title 呈现全路径）。
+   U1（1080p 半屏审查）：固定 px 列合计 266px，名称 42% 时最小窗（900px）
+   路径列仅剩 ~13px → 名称降到 36%，并给窄窗（≤1100px，半屏贴靠档）进一步降 30%。 */
 .result-table thead th.th-name {
-  width: 42%;
+  width: 36%;
+}
+@media (max-width: 1100px) {
+  .result-table thead th.th-name {
+    width: 30%;
+  }
 }
 .result-table thead th.th-mtime {
   width: 110px;
