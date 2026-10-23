@@ -55,6 +55,8 @@ pub fn run(open_dir: Option<String>) {
             // B1：main 窗口焦点追踪（托盘/热键/CLI 转发「聚焦最近活跃」的依据，
             // 副窗由 create_search_window 建窗时各自注册）
             commands::shell::track_window_focus(&main_win);
+            // P8 高分屏：主窗按已存配置应用界面缩放（fit_system_scale=false 时生效）
+            commands::shell::apply_zoom_config(&main_win, &state::default_index_dir());
 
             // R2：先起索引任务队列（须早于任何 submit）
             indexer_queue::init(app.handle().clone());

@@ -27,6 +27,108 @@ pub fn open_file(path: String) -> Result<(), String> {
     open::that(&path).map_err(|e| e.to_string())
 }
 
+/// 「打开方式…」（批次 B / P2）：弹出系统应用选择器，用户选定后打开。
+///
+/// - Linux：gtk3 `AppChooserDialog`（须在主线程弹，经 `run_on_main_thread`；
+///   命令本身 fire-and-forget，不阻塞 webview IPC）
+/// - Windows：`ShellExecuteExW` + `lpVerb = "openas"`（Win10+ 的
+///   「你要如何打开这个文件？」对话框）
+/// - macOS：无对等系统 API，显式报错
+#[tauri::command(async)]
+pub fn open_with(path: String, app: tauri::AppHandle) -> Result<(), String> {
+    if !Path::new(&path).exists() {
+        return Err(format!("路径不存在: {path}"));
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        open_with_linux(app, path)
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // 主线程要求：ShellExecuteExW 线程模型要求 COM 初始化（tauri 事件线程已初始化）；
+        // 直接同步调用即可，SEE_MASK_NOASYNC 保证返回时行为确定。
+        let _ = app;
+        open_with_windows(&path)
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app;
+        Err("当前平台暂不支持「打开方式」选择".to_string())
+    }
+}
+
+/// Linux 实现：gtk3 应用选择对话框（主线程运行嵌套事件循环）
+#[cfg(target_os = "linux")]
+fn open_with_linux(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    use gtk::prelude::*;
+
+    let p = std::path::PathBuf::from(&path);
+    app.run_on_main_thread(move || {
+        // 由文件名猜 content-type（不读文件内容，None 数据）
+        let name = p
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let (ctype, _) = gtk::gio::content_type_guess(Some(name.as_str()), &[]);
+        let dlg = gtk::AppChooserDialog::for_content_type(
+            None::<&gtk::Window>,
+            gtk::DialogFlags::MODAL,
+            ctype.as_str(),
+        );
+        let response = dlg.run();
+        let confirmed = matches!(response, gtk::ResponseType::Ok | gtk::ResponseType::Accept);
+        if confirmed {
+            if let Some(info) = dlg.app_info() {
+                if let Err(e) = info.launch(
+                    &[gtk::gio::File::for_path(&p)],
+                    None::<&gtk::gio::AppLaunchContext>,
+                ) {
+                    eprintln!("以选定程序打开失败: {e}");
+                }
+            }
+        }
+        // gtk3 顶层窗口 run() 完须销毁；gtk-rs 0.18 的 destroy() 是 unsafe（自引用窗口树）
+        unsafe { dlg.destroy() };
+    })
+    .map_err(|e| e.to_string())
+}
+
+/// Windows 实现：ShellExecuteExW + openas 动词
+#[cfg(target_os = "windows")]
+fn open_with_windows(path: &str) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::UI::Shell::{
+        ShellExecuteExW, SEE_MASK_NOASYNC, SEE_MASK_UNICODE, SHELLEXECUTEINFOW,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+    let verb: Vec<u16> = "openas\0".encode_utf16().collect();
+    let file: Vec<u16> = std::ffi::OsStr::new(path)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    let mut sei: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
+    sei.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
+    sei.fMask = SEE_MASK_NOASYNC | SEE_MASK_UNICODE;
+    sei.lpVerb = verb.as_ptr();
+    sei.lpFile = file.as_ptr();
+    sei.nShow = SW_SHOWNORMAL;
+
+    let ok = unsafe { ShellExecuteExW(&mut sei) };
+    if ok != 0 {
+        Ok(())
+    } else {
+        Err(format!(
+            "打开方式对话框调用失败（GetLastError={}）",
+            std::io::Error::last_os_error()
+        ))
+    }
+}
+
 /// 在系统文件管理器中定位该文件
 ///
 /// - Windows：`explorer /select,<path>` 在资源管理器中选中该文件

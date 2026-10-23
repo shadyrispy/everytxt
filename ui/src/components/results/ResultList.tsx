@@ -303,6 +303,9 @@ export default function ResultList(props: ResultListProps) {
         case 'open':
           await files.openFile(targets[0])
           break
+        case 'openWith':
+          await files.openWith(targets[0])
+          break
         case 'reveal':
           await files.revealInFolder(targets[0])
           break
@@ -357,9 +360,9 @@ export default function ResultList(props: ResultListProps) {
 
   const menuStyle = menu
     ? {
-        /* U3：菜单 9 项 + 3 分隔线 ≈ 272px 高，防溢出夹取按 290 计 */
+        /* U3：菜单 10 项 + 3 分隔线 ≈ 285px 高，防溢出夹取按 310 计 */
         left: Math.min(menu.x, Math.max(0, window.innerWidth - 176)),
-        top: Math.min(menu.y, Math.max(0, window.innerHeight - 290)),
+        top: Math.min(menu.y, Math.max(0, window.innerHeight - 310)),
       }
     : undefined
 
@@ -483,6 +486,9 @@ export default function ResultList(props: ResultListProps) {
         <div className="result-menu" style={menuStyle} role="menu" onMouseDown={(e) => e.stopPropagation()}>
           <button className="menu-item" onClick={() => void doOp('open', menu.targets)}>
             打开
+          </button>
+          <button className="menu-item" onClick={() => void doOp('openWith', menu.targets)}>
+            打开方式…
           </button>
           <button className="menu-item" onClick={() => void doOp('reveal', menu.targets)}>
             定位到文件

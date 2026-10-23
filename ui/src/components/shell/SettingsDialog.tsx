@@ -136,6 +136,14 @@ export default function SettingsDialog({ open, onClose }: SettingsDialogProps) {
       await api.setAutostart(cfg.autostart)
       await api.applyGlobalHotkeys(cfg.hotkeys.map((h) => h.accel))
       await api.setAppConfig(cfg)
+      // P8：缩放即时生效——应用到当前所有窗口（重启后由后端启动逻辑恢复）
+      try {
+        const { getAllWebviewWindows } = await import('@tauri-apps/api/webviewWindow')
+        const factor = cfg.fitSystemScale ? 1.0 : Math.min(200, Math.max(50, cfg.customZoom)) / 100
+        for (const w of await getAllWebviewWindows()) void w.setZoom(factor).catch(() => {})
+      } catch {
+        /* setZoom 失败不阻塞保存（重启后生效） */
+      }
       // 右击搜索：写系统集成（Linux 脚本/扩展、Windows 注册表）；返回结果文案
       let msg = '设置已保存'
       try {
@@ -189,6 +197,32 @@ export default function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                     </button>
                   ))}
                 </div>
+                {/* P8（手册 7.4）：高分屏「适配系统缩放比例」开关；字体/界面异常时取消勾选并手选缩放 */}
+                <label className="switch-row">
+                  <input
+                    type="checkbox"
+                    checked={cfg.fitSystemScale}
+                    onChange={(e) => patch({ fitSystemScale: e.target.checked })}
+                  />
+                  <span>适配系统缩放比例（高分屏字体异常时取消勾选，手动指定缩放）</span>
+                </label>
+                {!cfg.fitSystemScale && (
+                  <label className="switch-row">
+                    <span>界面缩放</span>
+                    <select
+                      className="filter-select"
+                      style={{ minWidth: 110 }}
+                      value={cfg.customZoom}
+                      onChange={(e) => patch({ customZoom: Number(e.target.value) })}
+                    >
+                      {[50, 75, 90, 100, 110, 125, 150, 175, 200].map((v) => (
+                        <option key={v} value={v}>
+                          {v}%
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
               </section>
 
               <section className="settings-section">

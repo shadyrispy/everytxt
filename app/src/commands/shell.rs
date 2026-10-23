@@ -91,12 +91,26 @@ pub struct AppConfig {
     /// 右击目录搜索（shell 集成）开关状态（P5）
     #[serde(default)]
     pub right_click_search: bool,
+    /// 适配系统缩放比例（批次 B / P8 高分屏开关）：true = 跟随系统（zoom 1.0）
+    #[serde(default = "default_true")]
+    pub fit_system_scale: bool,
+    /// 自定义缩放百分比（50..=200，仅 fit_system_scale=false 时应用）
+    #[serde(default = "default_custom_zoom")]
+    pub custom_zoom: u32,
     #[serde(default = "default_hotkeys")]
     pub hotkeys: Vec<HotkeyBinding>,
 }
 
 fn default_language() -> String {
     "zh-CN".to_string()
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_custom_zoom() -> u32 {
+    100
 }
 
 impl Default for AppConfig {
@@ -107,8 +121,24 @@ impl Default for AppConfig {
             autostart: false,
             close_to_tray: false,
             right_click_search: false,
+            fit_system_scale: true,
+            custom_zoom: default_custom_zoom(),
             hotkeys: default_hotkeys(),
         }
+    }
+}
+
+/// 对窗口应用缩放设置（P8）：fit_system_scale=true → zoom 1.0（跟随系统）；
+/// false → customZoom/100。失败仅告警（旧 webview 可能不支持）。
+pub fn apply_zoom_config(win: &tauri::WebviewWindow, index_dir: &std::path::Path) {
+    let cfg = AppConfig::load(index_dir);
+    let factor = if cfg.fit_system_scale {
+        1.0
+    } else {
+        (cfg.custom_zoom.clamp(50, 200) as f64) / 100.0
+    };
+    if let Err(e) = win.set_zoom(factor) {
+        eprintln!("应用界面缩放失败（不影响 GUI）: {e}");
     }
 }
 
@@ -363,6 +393,10 @@ pub fn create_search_window(app: AppHandle) -> Result<(), String> {
             .build()
             .map_err(|e| e.to_string())?;
     track_window_focus(&win);
+    // P8：副窗同样应用缩放设置（新 webview 不继承主窗 zoom）
+    if let Some(state) = app.try_state::<AppState>() {
+        apply_zoom_config(&win, &state.index_dir());
+    }
     Ok(())
 }
 

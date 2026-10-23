@@ -53,6 +53,15 @@ tauri-plugin-global-shortcut = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-updater = "2"
 
+# --- 批次 B / P2：打开方式选择 ---
+# Linux：gtk3 AppChooserDialog（版本对齐 tauri→tao→gtk 0.18，同版本合并编译）
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+# Windows：ShellExecuteExW("openas") 弹系统「打开方式」
+# （windows-sys 0.59 把 ShellExecuteExW/SHELLEXECUTEINFOW 挂在 Win32_System_Registry feature 下，历史遗留）
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_System_Registry"] }
+
 [features]
 # 注意：custom-protocol **不在 default**（与 tauri 官方模板一致：tauri dev 走 devUrl
 # 热重载不需要它，tauri build 会由 CLI 自动带上）。但**裸 cargo build 出的二进制

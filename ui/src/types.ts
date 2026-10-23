@@ -284,6 +284,10 @@ export interface AppConfig {
   closeToTray: boolean
   /** 右击目录搜索（shell 集成）开关（P5） */
   rightClickSearch: boolean
+  /** 适配系统缩放比例（P8）：true = 跟随系统；false = 使用 customZoom */
+  fitSystemScale: boolean
+  /** 自定义缩放百分比（50..=200，仅 fitSystemScale=false 生效） */
+  customZoom: number
   hotkeys: HotkeyBinding[]
 }
 

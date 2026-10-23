@@ -10,6 +10,11 @@ export function openFile(path: string): Promise<void> {
   return invoke<void>('open_file', { path })
 }
 
+/** 「打开方式…」：弹出系统应用选择器（批次 B / P2；fire-and-forget） */
+export function openWith(path: string): Promise<void> {
+  return invoke<void>('open_with', { path })
+}
+
 /** 在系统文件管理器中定位到该文件 */
 export function revealInFolder(path: string): Promise<void> {
   return invoke<void>('reveal_in_folder', { path })

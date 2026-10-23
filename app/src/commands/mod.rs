@@ -35,6 +35,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         search::remove_bookmark,
         // ---- 子项 2：文件操作 ----
         files::open_file,
+        files::open_with,
         files::reveal_in_folder,
         files::copy_paths,
         files::copy_file_names,

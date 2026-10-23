@@ -174,6 +174,12 @@ export default function App() {
       try {
         const cfg = await api.getAppConfig()
         setTheme(cfg.theme)
+        // P8：重启后按配置恢复界面缩放（fitSystemScale=false 时应用 customZoom）
+        if (!cfg.fitSystemScale) {
+          const { getAllWebviewWindows } = await import('@tauri-apps/api/webviewWindow')
+          const factor = Math.min(200, Math.max(50, cfg.customZoom)) / 100
+          for (const w of await getAllWebviewWindows()) void w.setZoom(factor).catch(() => {})
+        }
       } catch {
         /* 配置读取失败保持默认 */
       }
