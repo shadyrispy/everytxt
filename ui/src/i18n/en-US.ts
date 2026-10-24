@@ -71,6 +71,9 @@ const enUS: Record<string, string> = {
   'idx.noExt': 'Cannot determine the extension from the file name',
   'idx.unsupported': 'Unsupported format: {1} (content extraction not supported yet)',
   'idx.addedTypes': 'Added {1} type(s)',
+  /* E-1 (O5): index composition */
+  'idx.compLoadFail': 'Failed to load index composition: {1}',
+  'idx.compNoExt': '(no extension)',
 
   /* FilterRow: D2 type description */
   'idx.allTypes': 'Any file type',

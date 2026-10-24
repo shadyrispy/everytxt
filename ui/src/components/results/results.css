@@ -250,6 +250,35 @@
   word-break: break-all;
 }
 
+/* E-2（O4）：悬停卡片多片段切换角标（父级 pointer-events:none，此处显式恢复） */
+.hover-snip-switch {
+  pointer-events: auto;
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+.hover-snip-dot {
+  border: 1px solid var(--c-border-strong);
+  background: transparent;
+  color: var(--c-text-dim);
+  border-radius: 3px;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 4px;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+.hover-snip-dot:hover {
+  color: var(--c-text);
+  border-color: var(--c-accent);
+}
+.hover-snip-dot.on {
+  color: var(--c-accent);
+  border-color: var(--c-accent);
+  background: var(--c-accent-soft);
+}
+
 /* ------------------------------ 右键菜单 ------------------------------ */
 
 .result-menu {

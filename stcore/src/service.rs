@@ -68,6 +68,10 @@ pub struct ServiceSearchResponse {
 pub struct ServiceStats {
     pub docs: u64,
     pub disk_bytes: u64,
+    /// 索引构成（E-1 O5）：按扩展名分布。旧客户端不读此字段不受影响
+    /// （serde default）；Inproc 侧按需从 config 派生扩展名集合计算。
+    #[serde(default)]
+    pub composition: Option<crate::search::IndexComposition>,
 }
 
 /* ------------------------------ Inproc 直调 ------------------------------ */
@@ -109,9 +113,15 @@ impl SearchService for InprocBackend {
 
     fn stats(&self) -> Result<ServiceStats, String> {
         let mgr = self.open_mgr()?;
+        // 构成数据：从 index_dir 的 config.json 派生扩展名集合（缺省用内置默认）
+        let exts = crate::indexer::supported_exts(
+            &crate::config::Config::load(&self.index_dir).unwrap_or_default(),
+        );
+        let composition = crate::search::index_composition(&mgr, &exts).ok();
         Ok(ServiceStats {
             docs: mgr.num_docs(),
             disk_bytes: dir_size(&self.index_dir),
+            composition,
         })
     }
 }
@@ -281,6 +291,9 @@ impl SearchService for SocketClient {
         Ok(ServiceStats {
             docs: resp.docs.unwrap_or(0),
             disk_bytes: 0,
+            // socket stats 协议只回传 docs（契约保持最小）；构成数据走
+            // 专用 get_index_composition 命令（GUI）或 InprocBackend（CLI）。
+            composition: None,
         })
     }
 }

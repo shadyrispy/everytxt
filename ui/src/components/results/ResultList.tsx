@@ -266,7 +266,7 @@ export default function ResultList(props: ResultListProps) {
       /* U5：卡片 420px 宽 / ~110px 高，贴近视口右/下缘时向内夹取防裁切 */
       setHover({
         idx,
-        top: Math.min(rect.bottom + 4, Math.max(0, window.innerHeight - 130)),
+        top: Math.min(rect.bottom + 4, Math.max(0, window.innerHeight - 160)),
         left: Math.min(rect.left, Math.max(0, window.innerWidth - 430)),
       })
     }, 1200)
@@ -478,7 +478,7 @@ export default function ResultList(props: ResultListProps) {
       {hover && results[hover.idx] && (
         <div className="hover-preview" style={{ left: hover.left, top: hover.top }}>
           <div className="hover-preview-name">{baseName(results[hover.idx].name)}</div>
-          <div className="hover-preview-snippet">{results[hover.idx].snippet || '（无预览片段）'}</div>
+          <HoverSnippet key={hover.idx} result={results[hover.idx]} />
         </div>
       )}
 
@@ -526,5 +526,40 @@ export default function ResultList(props: ResultListProps) {
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * E-2（O4）：悬停卡片摘要片段。
+ *
+ * 多命中文档（snippets 非空且 >1）时显示 ①②③ 角标切换；snippets 为空
+ * （旧数据 / 单命中）回退渲染 snippet ——与旧行为逐字节一致。
+ * key={hover.idx} 由父级保证切换悬停目标时重置选中项。
+ */
+function HoverSnippet({ result }: { result: SearchResult }) {
+  const [i, setI] = useState(0)
+  const list = result.snippets && result.snippets.length > 0 ? result.snippets : null
+  if (!list) {
+    return <div className="hover-preview-snippet">{result.snippet || '（无预览片段）'}</div>
+  }
+  return (
+    <>
+      <div className="hover-preview-snippet">{list[Math.min(i, list.length - 1)]}</div>
+      {list.length > 1 && (
+        <div className="hover-snip-switch">
+          {list.map((_, k) => (
+            <button
+              key={k}
+              type="button"
+              className={'hover-snip-dot' + (k === i ? ' on' : '')}
+              onClick={() => setI(k)}
+              title={`第 ${k + 1} 处摘要`}
+            >
+              {'①②③'[k] ?? k + 1}
+            </button>
+          ))}
+        </div>
+      )}
+    </>
   )
 }

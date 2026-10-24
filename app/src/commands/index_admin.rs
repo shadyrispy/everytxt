@@ -16,7 +16,7 @@ use std::sync::{Mutex, OnceLock};
 
 use tauri::{Emitter, Manager, State};
 
-use crate::commands::dto::{IndexStats, StorageInfo};
+use crate::commands::dto::{ExtStat, IndexComposition, IndexStats, StorageInfo};
 use crate::indexer_queue::{self, IndexTask};
 use crate::state::AppState;
 use stcore::config::{Config, DirRule, FileType, RuleSet, RuleState, ScheduleConfig};
@@ -208,6 +208,35 @@ pub fn get_index_stats(state: State<'_, AppState>) -> Result<IndexStats, String>
         docs,
         size,
         available,
+    })
+}
+
+/// 索引构成（E-1 O5）：按扩展名的篇数分布 + 磁盘占用。
+///
+/// 懒加载语义：GUI 仅在用户展开「索引构成」小节时才调用（不随 stats 轮询），
+/// 避免每次统计都跑 N 个 Count 查询。索引不可用时降级 available=false。
+#[tauri::command(async)]
+pub fn get_index_composition(state: State<'_, AppState>) -> Result<IndexComposition, String> {
+    let index_dir = state.index_dir();
+    let cfg = Config::load(&index_dir).unwrap_or_default();
+    let exts = stcore::indexer::supported_exts(&cfg);
+    let (comp, available) =
+        match state.with_mgr(|mgr| stcore::search::index_composition(mgr, &exts)) {
+            Ok(c) => (c, true),
+            Err(_) => (stcore::search::IndexComposition::default(), false),
+        };
+    Ok(IndexComposition {
+        docs: if available { comp.docs } else { 0 },
+        disk_bytes: human_size(dir_size(&index_dir)),
+        available,
+        by_ext: comp
+            .by_ext
+            .into_iter()
+            .map(|s| ExtStat {
+                ext: s.ext,
+                docs: s.docs,
+            })
+            .collect(),
     })
 }
 

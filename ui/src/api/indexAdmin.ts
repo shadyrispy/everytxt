@@ -8,6 +8,7 @@ import { invoke } from '@tauri-apps/api/core'
 import type {
   DirRule,
   FileType,
+  IndexComposition,
   IndexStats,
   RuleState,
   ScanReport,
@@ -64,6 +65,11 @@ export function getIndexStats(): Promise<IndexStats> {
 
 export function getStorageInfo(): Promise<StorageInfo> {
   return invoke<StorageInfo>('get_storage_info')
+}
+
+/** 索引构成（E-1 O5）：按扩展名的篇数分布。懒加载——仅在用户展开构成小节时调用 */
+export function getIndexComposition(): Promise<IndexComposition> {
+  return invoke<IndexComposition>('get_index_composition')
 }
 
 /** 迁移索引存储目录（关索引 → 迁段+SQLite → 重开） */

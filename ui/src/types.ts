@@ -24,6 +24,8 @@ export interface SearchResult {
   hits: number
   /** 首个匹配片断（含上下文） */
   snippet: string
+  /** 多片段摘要（O4）：首/中/末至多 3 条；空 = 回退 snippet */
+  snippets?: string[]
 }
 
 /** 索引统计（状态栏显示） */
@@ -34,6 +36,23 @@ export interface IndexStats {
   size: string
   /** 索引是否可用；false = 索引缺失/损坏，UI 提示重建 */
   available: boolean
+}
+
+/** 索引构成的单扩展名桶（ext="" 表示无扩展名文档） */
+export interface ExtStat {
+  ext: string
+  docs: number
+}
+
+/** 索引构成（O5：按扩展名的篇数分布 + 磁盘占用；懒加载） */
+export interface IndexComposition {
+  docs: number
+  /** 索引体积（人类可读） */
+  diskBytes: string
+  /** 索引是否可用；false = 索引缺失/损坏，UI 提示重建 */
+  available: boolean
+  /** 按篇数降序；0 篇桶已过滤 */
+  byExt: ExtStat[]
 }
 
 /* ==================== 子项 1：搜索模式与 DSL ==================== */

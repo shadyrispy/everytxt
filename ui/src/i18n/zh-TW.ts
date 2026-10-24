@@ -70,6 +70,9 @@ const zhTW: Record<string, string> = {
   'idx.noExt': '無法從檔名判別副檔名',
   'idx.unsupported': '不支援的格式：{1}（尚未支援內容擷取）',
   'idx.addedTypes': '已新增 {1} 個類型',
+  /* E-1（O5）：索引構成 */
+  'idx.compLoadFail': '讀取索引構成失敗：{1}',
+  'idx.compNoExt': '（無副檔名）',
 
   /* FilterRow：D2 類型描述 */
   'idx.allTypes': '不限檔案類型',

@@ -65,9 +65,35 @@ enum CliSub {
     Stats {
         #[arg(long)]
         index_dir: Option<String>,
+        /// 附带按扩展名的构成明细（不带时输出与旧版逐字节一致）
+        #[arg(long)]
+        detail: bool,
     },
     /// 生成演示语料并索引（冒烟验收）
     Testdata {
+        #[arg(long)]
+        index_dir: Option<String>,
+    },
+    /// 导出（E-3 O3）：results / history / bookmarks → csv | jsonl（本地运维面）
+    Export {
+        /// 导出对象：results（搜索结果）/ history（搜索历史）/ bookmarks（书签）
+        #[arg(long, value_name = "WHAT")]
+        what: String,
+        /// results 必需：查询词
+        #[arg(long)]
+        query: Option<String>,
+        /// results：搜索模式（fuzzy/exact/dsl）
+        #[arg(long, default_value = "fuzzy")]
+        mode: String,
+        /// 条数上限（results 默认 100；history 默认全部，上限 500）
+        #[arg(long)]
+        limit: Option<usize>,
+        /// 输出格式：csv（UTF-8 BOM，Excel/WPS 直开）/ jsonl
+        #[arg(long, default_value = "csv")]
+        format: String,
+        /// 输出文件（缺省 stdout）
+        #[arg(long)]
+        out: Option<String>,
         #[arg(long)]
         index_dir: Option<String>,
     },
@@ -213,6 +239,7 @@ fn run_slash_search(query: String, drive: Option<String>, ext: Option<String>) {
 }
 
 fn run_cli(sub: CliSub) {
+    use stcore::config::Config;
     use stcore::index::IndexManager;
     use stcore::search::{search, SearchMode};
 
@@ -277,16 +304,49 @@ fn run_cli(sub: CliSub) {
             );
             for (i, h) in hits.iter().enumerate() {
                 cli_out!("{:>3}. [{} 次命中] {}", i + 1, h.hits, h.path);
-                if !h.snippet.is_empty() {
+                if h.snippets.len() > 1 {
+                    // E-2（O4）：多命中文档——轮换输出全部片段（替代单 snippet 行）；
+                    // 单命中/空 snippets 时走下面的分支，与旧版逐字节一致
+                    for (k, s) in h.snippets.iter().enumerate() {
+                        cli_out!("      [{}] {}", k + 1, s.replace('\n', " "));
+                    }
+                } else if !h.snippet.is_empty() {
                     cli_out!("      {}", h.snippet.replace('\n', " "));
                 }
             }
         }
-        CliSub::Stats { index_dir } => {
+        CliSub::Stats { index_dir, detail } => {
             let index_dir = resolve_index_dir(&index_dir);
             let mgr = die(IndexManager::open(&index_dir), "打开索引失败");
             let size = dir_size(&index_dir);
             cli_out!("索引 {} 篇文档，磁盘占用 {}", mgr.num_docs(), human(size));
+            if detail {
+                // E-1（O5）：按扩展名构成明细——扩展名集合从 config.json 派生
+                let cfg = Config::load(&index_dir).unwrap_or_default();
+                let exts = stcore::indexer::supported_exts(&cfg);
+                let comp = die(
+                    stcore::search::index_composition(&mgr, &exts),
+                    "构成统计失败",
+                );
+                if comp.by_ext.is_empty() {
+                    cli_out!("  （空索引，无构成数据）");
+                } else {
+                    cli_out!("  构成：");
+                    for s in &comp.by_ext {
+                        let pct = if comp.docs == 0 {
+                            0.0
+                        } else {
+                            s.docs as f64 / comp.docs as f64 * 100.0
+                        };
+                        let label = if s.ext.is_empty() {
+                            "（无扩展名）"
+                        } else {
+                            s.ext.as_str()
+                        };
+                        cli_out!("    {:<12} {:>8} 篇 ({pct:.1}%)", label, s.docs);
+                    }
+                }
+            }
         }
         CliSub::Testdata { index_dir } => {
             let index_dir = resolve_index_dir(&index_dir);
@@ -340,7 +400,218 @@ fn run_cli(sub: CliSub) {
             );
             cli_out!("\n试试: search-tool cli search 中华人民共和国 --mode fuzzy");
         }
+        CliSub::Export {
+            what,
+            query,
+            mode,
+            limit,
+            format,
+            out,
+            index_dir,
+        } => {
+            let index_dir = resolve_index_dir(&index_dir);
+            die(
+                run_export(
+                    &index_dir,
+                    &what,
+                    query.as_deref(),
+                    &mode,
+                    limit,
+                    &format,
+                    out.as_deref(),
+                ),
+                "导出失败",
+            );
+        }
     }
+}
+
+/* ------------------------------ E-3（O3）：导出 ------------------------------ */
+
+/// CSV 单元格转义 + 公式注入 sanitize。
+///
+/// sanitize（OWASP CSV Injection 惯例）：以 `=` `+` `-` `@` 制表符/回车开头的
+/// 单元格前置单引号 `'`——防 Excel/WPS 打开导出文件时把 `=HYPERLINK(...)`
+/// 之类内容当公式执行（国内用户 Excel/WPS 高频场景）。
+/// 转义：含逗号/引号/换行时双引号包裹，内嵌引号翻倍。
+fn csv_cell(s: &str) -> String {
+    let needs_guard = s.starts_with(['=', '+', '-', '@', '\t', '\r']);
+    let safe = if needs_guard {
+        format!("'{s}")
+    } else {
+        s.to_string()
+    };
+    if safe.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", safe.replace('"', "\"\""))
+    } else {
+        safe
+    }
+}
+
+/// 表头 + 行 → CSV 文本（调用方负责 BOM/写出）
+fn rows_to_csv(header: &[&str], rows: &[Vec<String>]) -> String {
+    let mut out = String::new();
+    out.push_str(
+        &header
+            .iter()
+            .map(|h| csv_cell(h))
+            .collect::<Vec<_>>()
+            .join(","),
+    );
+    out.push('\n');
+    for r in rows {
+        out.push_str(&r.iter().map(|c| csv_cell(c)).collect::<Vec<_>>().join(","));
+        out.push('\n');
+    }
+    out
+}
+
+/// 统一写出：`out` 为 Some 时写文件（csv 带 UTF-8 BOM，Excel/WPS 直开不乱码），
+/// None 时走 stdout（BrokenPipe 安全）。返回产出字节数（日志用）。
+fn write_export(text: &str, out: Option<&str>, with_bom: bool) -> anyhow::Result<usize> {
+    let body = if with_bom {
+        format!("\u{feff}{text}")
+    } else {
+        text.to_string()
+    };
+    match out {
+        Some(p) => {
+            std::fs::write(p, body.as_bytes())?;
+            Ok(body.len())
+        }
+        None => {
+            use std::io::Write;
+            let mut so = std::io::stdout().lock();
+            so.write_all(body.as_bytes())?;
+            Ok(body.len())
+        }
+    }
+}
+
+/// `cli export` 主流程（E-3 O3）：results / history / bookmarks × csv | jsonl。
+///
+/// 全只读：不开 IndexWriter、不动索引；history/bookmarks 走索引目录下
+/// `search-tool.db`（与 GUI 同库）。
+fn run_export(
+    index_dir: &std::path::Path,
+    what: &str,
+    query: Option<&str>,
+    mode: &str,
+    limit: Option<usize>,
+    format: &str,
+    out: Option<&str>,
+) -> anyhow::Result<()> {
+    use stcore::index::IndexManager;
+    let db = index_dir.join("search-tool.db");
+    let text = match what {
+        "results" => {
+            let q = query.ok_or_else(|| anyhow::anyhow!("--what results 需要 --query <查询词>"))?;
+            let mode = match mode {
+                "fuzzy" => stcore::search::SearchMode::Fuzzy,
+                "exact" => stcore::search::SearchMode::Exact,
+                "dsl" => stcore::search::SearchMode::Dsl,
+                other => anyhow::bail!("未知模式: {other}（可选 fuzzy/exact/dsl）"),
+            };
+            let cap = limit.unwrap_or(100);
+            let mgr = IndexManager::open(index_dir)?;
+            let hits = stcore::search::search(
+                &mgr,
+                q,
+                mode,
+                false,
+                cap,
+                &stcore::search::SearchFilter::default(),
+            )?;
+            match format {
+                "csv" => {
+                    let rows: Vec<Vec<String>> = hits
+                        .iter()
+                        .map(|h| {
+                            vec![
+                                h.path.clone(),
+                                h.title.clone(),
+                                h.hits.to_string(),
+                                h.mtime.to_string(),
+                                h.size.to_string(),
+                            ]
+                        })
+                        .collect();
+                    rows_to_csv(&["path", "title", "hits", "mtime", "size"], &rows)
+                }
+                "jsonl" => hits
+                    .iter()
+                    .map(|h| serde_json::to_string(h).unwrap_or_default())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                other => anyhow::bail!("未知格式: {other}（可选 csv/jsonl）"),
+            }
+        }
+        "history" => {
+            use stcore::store::HistoryStore;
+            let cap = limit.unwrap_or(500);
+            let entries = HistoryStore::open(&db)?.list(cap)?;
+            match format {
+                "csv" => {
+                    let rows: Vec<Vec<String>> = entries
+                        .iter()
+                        .map(|e| {
+                            vec![
+                                e.id.to_string(),
+                                e.query.clone(),
+                                e.mode.clone(),
+                                e.result_count.to_string(),
+                                e.ts.to_string(),
+                            ]
+                        })
+                        .collect();
+                    rows_to_csv(&["id", "query", "mode", "result_count", "ts"], &rows)
+                }
+                "jsonl" => entries
+                    .iter()
+                    .map(|e| serde_json::to_string(e).unwrap_or_default())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                other => anyhow::bail!("未知格式: {other}（可选 csv/jsonl）"),
+            }
+        }
+        "bookmarks" => {
+            use stcore::store::BookmarkStore;
+            let entries = BookmarkStore::open(&db)?.list()?;
+            let entries: Vec<_> = match limit {
+                Some(n) => entries.into_iter().take(n).collect(),
+                None => entries,
+            };
+            match format {
+                "csv" => {
+                    let rows: Vec<Vec<String>> = entries
+                        .iter()
+                        .map(|b| {
+                            vec![
+                                b.id.to_string(),
+                                b.path.clone(),
+                                b.name.clone(),
+                                b.created.to_string(),
+                            ]
+                        })
+                        .collect();
+                    rows_to_csv(&["id", "path", "name", "created"], &rows)
+                }
+                "jsonl" => entries
+                    .iter()
+                    .map(|b| serde_json::to_string(b).unwrap_or_default())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                other => anyhow::bail!("未知格式: {other}（可选 csv/jsonl）"),
+            }
+        }
+        other => anyhow::bail!("未知导出对象: {other}（可选 results/history/bookmarks）"),
+    };
+    let with_bom = format == "csv" && out.is_some();
+    let n = write_export(&text, out, with_bom)?;
+    if out.is_some() {
+        cli_out!("已导出 {} 字节 → {}", n, out.unwrap_or("-"));
+    }
+    Ok(())
 }
 
 fn dir_size(p: &std::path::Path) -> u64 {
@@ -451,5 +722,162 @@ mod tests {
         assert_eq!(drive_to_dir_prefix("C:/"), "C:");
         assert_eq!(drive_to_dir_prefix(" /d "), "/d");
         assert_eq!(drive_to_dir_prefix(""), "");
+    }
+
+    /* ------------------------------ E-3（O3）：导出 ------------------------------ */
+
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static EXPORT_SEQ: AtomicU64 = AtomicU64::new(0);
+
+    /// 自建唯一临时目录（沿用 files.rs 模式，不引 tempfile）
+    fn export_tmp_dir(tag: &str) -> std::path::PathBuf {
+        let n = EXPORT_SEQ.fetch_add(1, Ordering::Relaxed);
+        let p =
+            std::env::temp_dir().join(format!("st-export-test-{tag}-{}-{n}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    #[test]
+    fn csv_cell_sanitizes_injection() {
+        // 公式注入：危险前缀前置单引号
+        assert_eq!(csv_cell("=1+1"), "'=1+1");
+        assert_eq!(csv_cell("+cmd"), "'+cmd");
+        assert_eq!(csv_cell("-2"), "'-2");
+        assert_eq!(csv_cell("@SUM"), "'@SUM");
+        assert_eq!(csv_cell("\tTAB"), "'\tTAB");
+        // 普通单元格不动
+        assert_eq!(csv_cell("普通.txt"), "普通.txt");
+        assert_eq!(csv_cell("/tmp/a.txt"), "/tmp/a.txt");
+        // 引号/逗号包裹（内嵌引号翻倍）
+        assert_eq!(csv_cell("a,b"), "\"a,b\"");
+        assert_eq!(csv_cell("他说\"你好\""), "\"他说\"\"你好\"\"\"");
+        // 组合：危险前缀 + 逗号 → 先加 guard 再包裹
+        assert_eq!(csv_cell("=a,b"), "\"'=a,b\"");
+    }
+
+    /// 最小 CSV 行解析（测试专用：支持引号包裹与翻倍引号）
+    fn parse_csv_line(line: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut cur = String::new();
+        let mut in_q = false;
+        let mut chars = line.chars().peekable();
+        while let Some(c) = chars.next() {
+            if in_q {
+                if c == '"' {
+                    if chars.peek() == Some(&'"') {
+                        cur.push('"');
+                        chars.next();
+                    } else {
+                        in_q = false;
+                    }
+                } else {
+                    cur.push(c);
+                }
+            } else if c == '"' {
+                in_q = true;
+            } else if c == ',' {
+                out.push(std::mem::take(&mut cur));
+            } else {
+                cur.push(c);
+            }
+        }
+        out.push(cur);
+        out
+    }
+
+    #[test]
+    fn export_csv_roundtrip() {
+        let header = ["path", "title", "hits", "mtime", "size"];
+        let rows = vec![
+            vec![
+                "/tmp/a.txt".into(),
+                "a.txt".into(),
+                "3".into(),
+                "1700000000".into(),
+                "1024".into(),
+            ],
+            // 逗号/引号/公式注入混合单元格
+            vec![
+                "/tmp/b,逗号.txt".into(),
+                "他说\"你好\"".into(),
+                "=1+1".into(),
+                "0".into(),
+                "0".into(),
+            ],
+        ];
+        let csv = rows_to_csv(&header, &rows);
+        let mut lines = csv.lines();
+        assert_eq!(parse_csv_line(lines.next().unwrap()), header);
+        for (i, r) in rows.iter().enumerate() {
+            let got = parse_csv_line(lines.next().unwrap());
+            // sanitize 后 '=1+1' → '=1+1 前多一个单引号：回读应含 guard 符
+            let expect: Vec<String> = r
+                .iter()
+                .map(|c| {
+                    if c.starts_with(['=', '+', '-', '@', '\t', '\r']) {
+                        format!("'{c}")
+                    } else {
+                        c.clone()
+                    }
+                })
+                .collect();
+            assert_eq!(got, expect, "第 {} 行 roundtrip 不一致", i + 1);
+        }
+    }
+
+    #[test]
+    fn export_history_cap() {
+        use stcore::store::HistoryStore;
+        let dir = export_tmp_dir("hist");
+        let db = dir.join("search-tool.db");
+        {
+            let hs = HistoryStore::open(&db).unwrap();
+            for i in 0..5 {
+                hs.add(&format!("查询{i}"), "fuzzy", i).unwrap();
+            }
+        }
+        // cap 生效：list(2) 只回 2 条（导出接线透传 limit）
+        let entries = HistoryStore::open(&db).unwrap().list(2).unwrap();
+        assert_eq!(entries.len(), 2, "--limit 应透传为 list cap");
+        // 行构造口径：id/query/mode/result_count/ts 五列
+        let rows: Vec<Vec<String>> = entries
+            .iter()
+            .map(|e| {
+                vec![
+                    e.id.to_string(),
+                    e.query.clone(),
+                    e.mode.clone(),
+                    e.result_count.to_string(),
+                    e.ts.to_string(),
+                ]
+            })
+            .collect();
+        assert!(rows.iter().all(|r| r.len() == 5));
+        // csv 生成不 panic 且行数 = 1 表头 + 2 数据
+        let csv = rows_to_csv(&["id", "query", "mode", "result_count", "ts"], &rows);
+        assert_eq!(csv.lines().count(), 3);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn export_results_requires_query() {
+        // --what results 缺 --query → 报错（不 panic）
+        let dir = export_tmp_dir("noq");
+        let r = run_export(&dir, "results", None, "fuzzy", None, "csv", None);
+        assert!(r.is_err());
+        assert!(r.unwrap_err().to_string().contains("query"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn export_unknown_what_rejected() {
+        let dir = export_tmp_dir("what");
+        let r = run_export(&dir, "everything", None, "fuzzy", None, "csv", None);
+        assert!(r.is_err());
+        assert!(r.unwrap_err().to_string().contains("未知导出对象"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

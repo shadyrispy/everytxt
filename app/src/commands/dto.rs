@@ -70,6 +70,8 @@ pub struct HitRow {
     pub size: u64,
     pub hits: usize,
     pub snippet: String,
+    /// 多片段摘要（E-2 O4）：首/中/末至多 3 条；空 = 回退 snippet
+    pub snippets: Vec<String>,
 }
 
 impl From<stcore::search::SearchHit> for HitRow {
@@ -81,6 +83,7 @@ impl From<stcore::search::SearchHit> for HitRow {
             size: h.size,
             hits: h.hits,
             snippet: h.snippet,
+            snippets: h.snippets,
         }
     }
 }
@@ -104,6 +107,29 @@ pub struct StorageInfo {
     pub docs: u64,
     pub size: String,
     pub available: bool,
+}
+
+/* ------------------------------ E-1 索引构成（O5） ------------------------------ */
+
+/// 单扩展名计数（ext="" 表示无扩展名文档桶）
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtStat {
+    pub ext: String,
+    pub docs: u64,
+}
+
+/// 索引构成快照（`get_index_composition` 懒加载返回）。
+///
+/// `available=false` 表示索引当前不可用（docs/by_ext 归零，前端展示不可用态），
+/// 与 `IndexStats` 的降级语义保持一致。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexComposition {
+    pub docs: u64,
+    pub disk_bytes: String,
+    pub available: bool,
+    pub by_ext: Vec<ExtStat>,
 }
 
 /* ------------------------------ 子项 2 ------------------------------ */

@@ -71,6 +71,9 @@ const ja: Record<string, string> = {
   'idx.noExt': 'ファイル名から拡張子を特定できません',
   'idx.unsupported': '未対応の形式：{1}（内容の抽出には未対応）',
   'idx.addedTypes': '{1} 個の種類を追加しました',
+  /* E-1（O5）：索引構成 */
+  'idx.compLoadFail': '索引構成の読み込みに失敗しました：{1}',
+  'idx.compNoExt': '（拡張子なし）',
 
   /* FilterRow：D2 種類の説明 */
   'idx.allTypes': 'すべてのファイル種類',

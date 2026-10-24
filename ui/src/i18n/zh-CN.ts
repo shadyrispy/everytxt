@@ -70,6 +70,9 @@ const zhCN: Record<string, string> = {
   'idx.noExt': '无法从文件名识别扩展名',
   'idx.unsupported': '不支持的格式：{1}（该格式暂不支持内容提取）',
   'idx.addedTypes': '已新增 {1} 个类型',
+  /* E-1（O5）：索引构成 */
+  'idx.compLoadFail': '读取索引构成失败：{1}',
+  'idx.compNoExt': '（无扩展名）',
 
   /* FilterRow：D2 类型描述 */
   'idx.allTypes': '不限文件类型',

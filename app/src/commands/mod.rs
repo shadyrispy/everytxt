@@ -53,6 +53,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         index_admin::remove_dir_rule,
         index_admin::list_indexed_roots,
         index_admin::get_index_stats,
+        index_admin::get_index_composition,
         index_admin::get_storage_info,
         index_admin::migrate_storage,
         index_admin::get_schedule_config,

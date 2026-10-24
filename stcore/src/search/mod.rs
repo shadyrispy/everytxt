@@ -93,7 +93,12 @@ pub struct SearchHit {
     pub path: String,
     pub title: String,
     pub hits: usize,
+    /// 首个命中上下文（兼容字段：前端 snippets 为空时回退渲染它）
     pub snippet: String,
+    /// 多片段摘要（E-2 O4）：首/中/末至多 3 条，长文档一屏看全部命中分布。
+    /// serde default：旧数据/旧消费者缺字段时反序列化为空 → 回退 snippet。
+    #[serde(default)]
+    pub snippets: Vec<String>,
     pub mtime: i64,
     pub size: u64,
 }
@@ -459,7 +464,7 @@ pub fn search_page(
             continue;
         }
         let title = path.rsplit('/').next().unwrap_or(&path).to_string();
-        let (hits_count, snippet) = count_and_snip(&body, &hl_tokens);
+        let (hits_count, snippet, snippets) = count_and_snip(&body, &hl_tokens);
         let mtime = doc_field_i64(&searcher, addr, mgr.f_mtime);
         let size = doc_field_i64(&searcher, addr, mgr.f_size) as u64;
         hits.push(SearchHit {
@@ -467,6 +472,7 @@ pub fn search_page(
             title,
             hits: hits_count,
             snippet,
+            snippets,
             mtime,
             size,
         });
@@ -545,7 +551,7 @@ pub fn regex_search_with_limits(
         }
         if re.is_match(&body) {
             let title = path.rsplit('/').next().unwrap_or(&path).to_string();
-            let (hits_count, snippet) = regex_count_and_snip(&re, &body);
+            let (hits_count, snippet, snippets) = regex_count_and_snip(&re, &body);
             let mtime = doc_field_i64(&searcher, addr, mgr.f_mtime);
             let size = doc_field_i64(&searcher, addr, mgr.f_size) as u64;
             matched.push(SearchHit {
@@ -553,6 +559,7 @@ pub fn regex_search_with_limits(
                 title,
                 hits: hits_count,
                 snippet,
+                snippets,
                 mtime,
                 size,
             });
@@ -617,17 +624,50 @@ fn doc_field_i64(searcher: &tantivy::Searcher, addr: tantivy::DocAddress, field:
 use tantivy::schema::Value as _;
 use tantivy::TantivyDocument;
 
-/// 统计命中次数并生成首个匹配片断（±60 字）
+/// 多片段摘要条数上限（首/中/末）
+const MAX_SNIPPETS: usize = 3;
+
+/// 命中位置采样池上限（E-2 R4：防超长文档命中上万时 Vec 内存尖峰；
+/// 指数抽稀保持池 ≤ 该值，末位置另存必保）
+const SNIP_POS_K: usize = 64;
+
+/// 统计命中次数并生成摘要片段（±60 字）
 ///
 /// ASCII 折叠口径：与索引侧大小写处理一致，且 `to_ascii_lowercase` 保持
 /// 字节等长，命中偏移可直接映射回 `body`（历史 `to_lowercase` 偏移错位 Bug）。
-fn count_and_snip(body: &str, tokens: &[String]) -> (usize, String) {
+///
+/// E-2（O4）：除首个片段（`snippet` 兼容字段）外，另从采样位置产出
+/// 首/中/末至多 [`MAX_SNIPPETS`] 条（`snippets`）。位置经指数抽稀采样
+/// （池 ≤ [`SNIP_POS_K`]），`total` 仍为全篇真实命中总数。
+fn count_and_snip(body: &str, tokens: &[String]) -> (usize, String, Vec<String>) {
     if tokens.is_empty() {
-        return (0, String::new());
+        return (0, String::new(), Vec::new());
     }
     let lower = body.to_ascii_lowercase();
+    let (total, pool, last) = sample_positions(&lower, tokens);
+    let snippet = match pool.first() {
+        None => body.chars().take(120).collect(),
+        Some(&p) => snippet_around(body, p, 60),
+    };
+    let snippets = snippets_from_positions(body, &pool, last, 60);
+    (total, snippet, snippets)
+}
+
+/// 全篇扫描统计命中总数，并以指数抽稀采样命中位置。
+///
+/// 返回 `(total, pool, last)`：
+/// - `total`：全篇真实命中总数（与旧口径一致，不封顶）；
+/// - `pool`：采样池，长度恒 ≤ [`SNIP_POS_K`]（池满时步长翻倍 + 保留偶数位，
+///   把池压回 K/2 后按新步长继续填）——防超长文档命中上万时 Vec 内存尖峰；
+/// - `last`：最后一个命中位置（必保，抽稀不丢尾部）。
+///
+/// `lower` 须为已 ASCII 折叠的正文（命中偏移与 `body` 字节等长可映射）。
+fn sample_positions(lower: &str, tokens: &[String]) -> (usize, Vec<usize>, Option<usize>) {
     let mut total = 0usize;
-    let mut first_pos: Option<usize> = None;
+    let mut pool: Vec<usize> = Vec::new();
+    let mut stride = 1usize;
+    let mut since = 0usize;
+    let mut last: Option<usize> = None;
     for t in tokens {
         if t.is_empty() {
             continue;
@@ -637,28 +677,45 @@ fn count_and_snip(body: &str, tokens: &[String]) -> (usize, String) {
         while let Some(p) = lower[start..].find(&tl) {
             let abs = start + p;
             total += 1;
-            if first_pos.is_none() {
-                first_pos = Some(abs);
+            last = Some(abs);
+            if since == 0 {
+                pool.push(abs);
+                if pool.len() >= SNIP_POS_K {
+                    // 抽稀：步长翻倍 + 池保留偶数位（池回落到 K/2，随后按新步长再填满）
+                    stride *= 2;
+                    let mut i = 0usize;
+                    pool.retain(|_| {
+                        let keep = i.is_multiple_of(2);
+                        i += 1;
+                        keep
+                    });
+                }
+            }
+            since += 1;
+            if since >= stride {
+                since = 0;
             }
             start = abs + tl.len().max(1);
         }
     }
-    let snippet = match first_pos {
-        None => body.chars().take(120).collect(),
-        Some(p) => snippet_around(body, p, 60),
-    };
-    (total, snippet)
+    (total, pool, last)
 }
 
 /// regex 命中计数（计满 `REGEX_HITS_CAP` 即停）+ 首个匹配上下文（±80 字）
-fn regex_count_and_snip(re: &Regex, body: &str) -> (usize, String) {
+///
+/// E-2（O4）：`snippets` 取已扫描范围内（≤ cap）的首/中/末。注意 regex
+/// 熔断语义本就只扫前 cap 个命中，"末条"= 第 cap 个命中而非文档物理末尾，
+/// 与 `total` 的封顶口径一致（`partial` 标志已向调用方提示不完整）。
+fn regex_count_and_snip(re: &Regex, body: &str) -> (usize, String, Vec<String>) {
     let mut total = 0usize;
+    let mut positions: Vec<usize> = Vec::new();
     let mut first_pos: Option<usize> = None;
     for m in re.find_iter(body) {
         if first_pos.is_none() {
             first_pos = Some(m.start());
         }
         total += 1;
+        positions.push(m.start());
         if total >= REGEX_HITS_CAP {
             break;
         }
@@ -667,7 +724,42 @@ fn regex_count_and_snip(re: &Regex, body: &str) -> (usize, String) {
         None => String::new(),
         Some(p) => snippet_around(body, p, 80),
     };
-    (total, snippet)
+    let last = positions.last().copied();
+    let snippets = snippets_from_positions(body, &positions, last, 80);
+    (total, snippet, snippets)
+}
+
+/// 采样位置 → 多片段摘要：首 / 中 / 末（≤ [`MAX_SNIPPETS`] 条）
+///
+/// 按**片段文本**去重（而非仅字节位）：相邻命中（间距 < 2×radius）会产生
+/// 大段重叠的相同文本，只保留第一条——避免 ①②③ 角标展示重复内容。
+fn snippets_from_positions(
+    body: &str,
+    pool: &[usize],
+    last: Option<usize>,
+    radius: usize,
+) -> Vec<String> {
+    let mut pos: Vec<usize> = Vec::with_capacity(MAX_SNIPPETS);
+    if let Some(&f) = pool.first() {
+        pos.push(f);
+    }
+    if pool.len() > 2 {
+        pos.push(pool[pool.len() / 2]);
+    }
+    if let Some(l) = last {
+        pos.push(l);
+    }
+    let mut out: Vec<String> = Vec::with_capacity(MAX_SNIPPETS);
+    for p in pos {
+        let s = snippet_around(body, p, radius);
+        if !out.contains(&s) {
+            out.push(s);
+        }
+        if out.len() >= MAX_SNIPPETS {
+            break;
+        }
+    }
+    out
 }
 
 /// 字节偏移 → ±`radius` 字符上下文片断（越界加省略号）
@@ -685,6 +777,58 @@ fn snippet_around(body: &str, byte_pos: usize, radius: usize) -> String {
         s.push('…');
     }
     s
+}
+
+/* ------------------------------ 索引构成（O5，E-1） ------------------------------ */
+
+/// 单扩展名计数（GUI 构成面板 / CLI `stats --detail` / socket stats 复用）
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtStat {
+    pub ext: String,
+    pub docs: u64,
+}
+
+/// 索引构成：文档总数 + 按扩展名分布（`docs` 降序，同数按 ext 升序）
+///
+/// 不含 disk_bytes：目录体积计算在 app/CLI 层已有（`dir_size`），
+/// stcore 不重复实现（单一事实源）。
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexComposition {
+    pub docs: u64,
+    pub by_ext: Vec<ExtStat>,
+}
+
+/// 按扩展名聚合索引构成。
+///
+/// ext 字段为 STRING（无 FAST，不能直接 facet 聚合）：对调用方给的扩展名
+/// 集合逐个 `TermQuery + Count` collector 计数——词典级 postings 计数，
+/// ~40 个 ext × O(词典项)，对话框级交互可接受（<100ms 目标）。
+///
+/// 归桶口径（与 `Writer::upsert` 的 ext 提取一致，见 index/mod.rs）：
+/// - 压缩包内层条目 `包.zip#inner.txt` 的 ext = 内层真实扩展名（txt）；
+/// - 外层 zip 自身通常无正文不入索引，故 by_ext 不含 zip 本身；
+/// - 无扩展名文档（`Path::extension()` 为 None）归 `ext = ""` 桶。
+pub fn index_composition(mgr: &IndexManager, exts: &[String]) -> anyhow::Result<IndexComposition> {
+    let reader = mgr.index.reader()?;
+    let searcher = reader.searcher();
+    let docs = searcher.num_docs();
+    let mut by_ext: Vec<ExtStat> = Vec::with_capacity(exts.len() + 1);
+    // 派生集合 + ""（无扩展名）逐桶计数；0 篇的桶不列出（面板更干净）
+    for e in exts.iter().chain(std::iter::once(&String::new())) {
+        let term = Term::from_field_text(mgr.f_ext, e.as_str());
+        let q = TermQuery::new(term, IndexRecordOption::Basic);
+        let count = searcher.search(&q, &Count)?;
+        if count > 0 {
+            by_ext.push(ExtStat {
+                ext: e.clone(),
+                docs: count as u64,
+            });
+        }
+    }
+    by_ext.sort_by(|a, b| b.docs.cmp(&a.docs).then_with(|| a.ext.cmp(&b.ext)));
+    Ok(IndexComposition { docs, by_ext })
 }
 
 #[cfg(test)]
@@ -836,5 +980,196 @@ mod tests {
             hits[0].path, "/tmp/a.txt",
             "title 命中（A）应排在 body 命中（B）之前"
         );
+    }
+
+    /* ------------------------------ 索引构成（E-1） ------------------------------ */
+
+    /// 构造混合扩展名索引：3 txt + 2 md + 1 无扩展名 + 压缩包内层 1 zip 条目
+    fn seed_composition(dir: &std::path::Path) {
+        let mut w = Writer::open(dir).unwrap();
+        let docs = [
+            ("/tmp/a.txt", "a", "txt"),
+            ("/tmp/b.txt", "b", "txt"),
+            ("/tmp/c.txt", "c", "txt"),
+            ("/tmp/readme.md", "m", "md"),
+            ("/tmp/notes.md", "n", "md"),
+            ("/tmp/noext", "x", ""),
+        ];
+        for (p, t, _e) in docs {
+            w.upsert(&IndexDoc {
+                path: p.to_string(),
+                title: t.to_string(),
+                body: "内容".to_string(),
+                size: 6,
+                mtime: 0,
+            })
+            .unwrap();
+        }
+        // 压缩包内层条目：虚拟路径 ext 取内层真实扩展名（归 txt 桶）
+        w.upsert(&IndexDoc {
+            path: "/tmp/资料打包.zip#inner.txt".to_string(),
+            title: "inner.txt".to_string(),
+            body: "包内".to_string(),
+            size: 6,
+            mtime: 0,
+        })
+        .unwrap();
+        w.commit().unwrap();
+    }
+
+    #[test]
+    fn composition_sums_to_num_docs() {
+        let dir = tempfile::tempdir().unwrap();
+        seed_composition(dir.path());
+        let mgr = IndexManager::open(dir.path()).unwrap();
+
+        // 派生集合覆盖全部实际扩展名（模拟 app 层 Config::all_exts 归一化产物）
+        let exts = vec!["txt".to_string(), "md".to_string()];
+        let comp = index_composition(&mgr, &exts).unwrap();
+
+        assert_eq!(comp.docs, 7, "6 文件 + 1 内层条目");
+        let get = |e: &str| {
+            comp.by_ext
+                .iter()
+                .find(|s| s.ext == e)
+                .map(|s| s.docs)
+                .unwrap_or(0)
+        };
+        assert_eq!(get("txt"), 4, "3 txt + 1 zip 内层");
+        assert_eq!(get("md"), 2);
+        assert_eq!(get(""), 1, "无扩展名归空桶");
+
+        let sum: u64 = comp.by_ext.iter().map(|s| s.docs).sum();
+        assert_eq!(sum, comp.docs, "各桶之和 == num_docs（无遗漏归桶）");
+
+        // docs 降序；同数按 ext 升序（md=2 与 ""=1 不同数，直接查序）
+        let order: Vec<&str> = comp.by_ext.iter().map(|s| s.ext.as_str()).collect();
+        assert_eq!(order, vec!["txt", "md", ""]);
+
+        // 0 篇桶不列出：zip 不在派生集合中则无桶
+        assert!(comp.by_ext.iter().all(|s| s.docs > 0));
+    }
+
+    #[test]
+    fn composition_empty_index_all_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let mgr = IndexManager::open(dir.path()).unwrap();
+        let comp = index_composition(&mgr, &["txt".to_string()]).unwrap();
+        assert_eq!(comp.docs, 0);
+        assert!(comp.by_ext.is_empty(), "空索引无桶");
+    }
+
+    /* ------------------------------ 多片段摘要（E-2） ------------------------------ */
+
+    /// 造一篇命中 N 次「量子」的长文：每次命中间隔 200 字节（"量子" + 填充），
+    /// 首/尾命中可辨识（分别带 头/尾 标记）。
+    fn long_body_with_hits(n: usize) -> String {
+        let mut s = String::from("文档头标记 ");
+        for i in 0..n {
+            s.push_str("量子");
+            s.push_str(&format!("{:06}", i));
+            // 填充到约 200 字节间隔（ASCII 数字，字节等长）
+            s.push_str(&"-".repeat(200 - 2 - 6));
+        }
+        s.push_str(" 文档尾标记");
+        s
+    }
+
+    #[test]
+    fn snippets_capped_and_spread() {
+        let body = long_body_with_hits(40);
+        let tokens = vec!["量子".to_string()];
+        let (total, snippet, snippets) = count_and_snip(&body, &tokens);
+        assert_eq!(total, 40, "total 为全篇真实命中数");
+        assert!(!snippet.is_empty(), "兼容 snippet 字段非空");
+
+        assert!(
+            snippets.len() <= MAX_SNIPPETS,
+            "条数上限 3，实际 {}",
+            snippets.len()
+        );
+        assert!(snippets.len() >= 2, "多命中应产出多条（首/中/末去重后）");
+        // 首条覆盖文首命中附近（含头标记）；末条覆盖文末命中附近（含尾标记）
+        assert!(
+            snippets[0].contains("文档头标记"),
+            "首条应含文档头附近内容：{}",
+            snippets[0]
+        );
+        assert!(
+            snippets[snippets.len() - 1].contains("000039"),
+            "末条应覆盖最后一个命中（#39）：{}",
+            snippets[snippets.len() - 1]
+        );
+        // 三条互不相同（去重生效）
+        let uniq: std::collections::BTreeSet<&String> = snippets.iter().collect();
+        assert_eq!(uniq.len(), snippets.len(), "片段应按位置去重");
+
+        // 单命中：仅 1 条（首==末去重）
+        let one = "只有一处量子出现在文档中".to_string();
+        let (_, _, s1) = count_and_snip(&one, &tokens);
+        assert_eq!(s1.len(), 1);
+        // 相邻命中（间距 < 2×radius）：重叠片段按文本去重，只留 1 条
+        let near = "开头量子计算先说一句，紧接着量子计算再出现一次，两处很近".to_string();
+        let (total_near, _, s_near) = count_and_snip(&near, &tokens);
+        assert_eq!(total_near, 2);
+        assert_eq!(s_near.len(), 1, "相邻命中的重叠片段应去重");
+        // 无命中：snippets 空、snippet 走 take(120) 兜底
+        let (_, s0, sn0) = count_and_snip("没有任何关键词", &tokens);
+        assert!(!s0.is_empty() && sn0.is_empty());
+    }
+
+    #[test]
+    fn snippet_sampling_bounded() {
+        // 1 万次命中：采样池必须 ≤ SNIP_POS_K，且 total 仍精确
+        let body = long_body_with_hits(10_000);
+        let tokens = vec!["量子".to_string()];
+        let lower = body.to_ascii_lowercase();
+        let (total, pool, last) = sample_positions(&lower, &tokens);
+        assert_eq!(total, 10_000, "total 不被采样截断");
+        assert!(
+            pool.len() <= SNIP_POS_K,
+            "采样池上限锁定：{} ≤ {}",
+            pool.len(),
+            SNIP_POS_K
+        );
+        assert_eq!(
+            *pool.first().unwrap(),
+            body.find("量子").unwrap(),
+            "首位置必保"
+        );
+        assert_eq!(last.unwrap(), body.rfind("量子").unwrap(), "末位置必保");
+        // 池内位置严格递增（扫描顺序）
+        assert!(pool.windows(2).all(|w| w[0] < w[1]));
+    }
+
+    #[test]
+    fn regex_snippets_capped() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut w = Writer::open(dir.path()).unwrap();
+        // 30 次命中 > REGEX_HITS_CAP(20)：snippets 仍 ≤3，total 封顶 20
+        let body = long_body_with_hits(30);
+        w.upsert(&IndexDoc {
+            path: "/tmp/re.txt".to_string(),
+            title: "re.txt".to_string(),
+            body: body.clone(),
+            size: body.len() as u64,
+            mtime: 0,
+        })
+        .unwrap();
+        w.commit().unwrap();
+        drop(w);
+        let mgr = IndexManager::open(dir.path()).unwrap();
+        let hits = search(
+            &mgr,
+            "量子",
+            SearchMode::Regex,
+            false,
+            10,
+            &SearchFilter::default(),
+        )
+        .unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].hits, REGEX_HITS_CAP, "regex 计数封顶");
+        assert!(hits[0].snippets.len() <= MAX_SNIPPETS);
     }
 }

@@ -12,6 +12,7 @@ import { listen } from '@tauri-apps/api/event'
 import type {
   DirRule,
   FileType,
+  IndexComposition,
   RebuildProgress,
   RuleState,
   ScheduleConfig,
@@ -97,6 +98,10 @@ export default function IndexAdminDialog({ open, onClose, onPausedChange }: Inde
   const [storage, setStorage] = useState<StorageInfo | null>(null)
   const [migratePath, setMigratePath] = useState('')
 
+  /* 区块 3 附：索引构成（E-1 O5）——懒加载：首次进入存储区块才拉取 */
+  const [comp, setComp] = useState<IndexComposition | null>(null)
+  const [compErr, setCompErr] = useState<string | null>(null)
+
   /* 区块 4：定时更新 */
   const [schedule, setSchedule] = useState<ScheduleConfig | null>(null)
 
@@ -122,6 +127,16 @@ export default function IndexAdminDialog({ open, onClose, onPausedChange }: Inde
 
   const loadRoots = () => api.listIndexedRoots().then(setRoots)
 
+  /** 索引构成（E-1）：默认懒加载（已加载则跳过）；force = 重建/迁移后强制重拉 */
+  const loadComposition = (force = false) => {
+    if (!force && (comp || compErr)) return Promise.resolve()
+    setCompErr(null)
+    return api
+      .getIndexComposition()
+      .then(setComp)
+      .catch((e: unknown) => setCompErr(errMsg(e)))
+  }
+
   /* 打开时初始化；同时订阅索引进度事件 */
   useEffect(() => {
     if (!open) return
@@ -132,6 +147,8 @@ export default function IndexAdminDialog({ open, onClose, onPausedChange }: Inde
     setProgress(null)
     setBusy(false)
     setPaused(false)
+    setComp(null)
+    setCompErr(null)
     Promise.all([loadTypes(), loadStorage(), loadSchedule(), loadRoots()]).catch((e: unknown) =>
       fail(e, '读取配置失败：'),
     )
@@ -147,6 +164,7 @@ export default function IndexAdminDialog({ open, onClose, onPausedChange }: Inde
           setProgress(null)
           void loadStorage()
           void loadRoots()
+          void loadComposition(true) // 索引内容已变：强制重拉构成
           return
         }
         setProgress(p)
@@ -177,6 +195,13 @@ export default function IndexAdminDialog({ open, onClose, onPausedChange }: Inde
     loadRules(ruleTypeId).catch((e: unknown) => fail(e, '读取目录规则失败：'))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, section, ruleTypeId])
+
+  /* E-1：首次进入存储区块时懒加载索引构成（不随对话框打开全量拉取） */
+  useEffect(() => {
+    if (!open || section !== 'storage') return
+    void loadComposition()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, section])
 
   const askConfirm = (text: string, onOk: () => void) => setConfirm({ text, onOk })
 
@@ -714,6 +739,43 @@ export default function IndexAdminDialog({ open, onClose, onPausedChange }: Inde
                 ) : (
                   <div className="empty">读取中…</div>
                 )}
+                {/* E-1（O5）：索引构成——懒加载，按扩展名篇数分布横条图 */}
+                <div className="idx-comp">
+                  <h4 className="idx-comp-title">索引构成</h4>
+                  {compErr ? (
+                    <div className="idx-msg err" role="status">
+                      {t('idx.compLoadFail', [compErr])}
+                    </div>
+                  ) : comp && !comp.available ? (
+                    <div className="idx-hint">索引不可用，无法统计构成</div>
+                  ) : comp ? (
+                    comp.byExt.length === 0 ? (
+                      <div className="idx-hint">空索引，暂无构成数据</div>
+                    ) : (
+                      <ul className="idx-comp-list">
+                        {comp.byExt.map((s) => {
+                          const pct =
+                            comp.docs > 0 ? Math.round((s.docs / comp.docs) * 1000) / 10 : 0
+                          return (
+                            <li key={s.ext || '(none)'} className="idx-comp-row">
+                              <span className="idx-comp-ext">
+                                {s.ext || t('idx.compNoExt')}
+                              </span>
+                              <span className="idx-comp-bar">
+                                <i style={{ width: `${pct}%` }} />
+                              </span>
+                              <span className="idx-comp-num">
+                                {s.docs} 篇 · {pct}%
+                              </span>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    )
+                  ) : (
+                    <div className="empty">读取中…</div>
+                  )}
+                </div>
                 <div className="idx-add-row">
                   <input
                     className="idx-input grow"
