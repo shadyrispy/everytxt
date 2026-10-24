@@ -370,6 +370,59 @@ pub fn count_docs(dir: &Path) -> anyhow::Result<u64> {
     Ok(num_docs)
 }
 
+/* --------------------------- 增量同步枚举（F-1 专用） --------------------------- */
+
+/// 一次性枚举索引文档元数据 `(path, mtime, size)`（增量同步 `indexer::sync_root` 用）。
+///
+/// 与 [`count_docs`] 同款 `ReloadPolicy::Manual`：零 watcher 线程、句柄随 drop
+/// 同步关闭（实时同步每事件调用一次，不为单次枚举 spawn/join watcher 线程；
+/// Windows 删除前置条件同样满足）。
+///
+/// `root` 为 `Some` 时只保留位于该 root 之下（含 `path#entry` 压缩包内层）的
+/// 文档——多 root 索引 per-root 增量互不牵连的核心原语。
+pub fn list_doc_meta(dir: &Path, root: Option<&Path>) -> anyhow::Result<Vec<(String, i64, u64)>> {
+    let index = open_index(dir)?;
+    let reader: IndexReader = index
+        .reader_builder()
+        .reload_policy(ReloadPolicy::Manual)
+        .try_into()?;
+    let searcher = reader.searcher();
+    let fields = fields_of(&index)?;
+    let addrs = searcher.search(
+        &tantivy::query::AllQuery,
+        &tantivy::collector::DocSetCollector,
+    )?;
+    let mut out = Vec::with_capacity(addrs.len());
+    for addr in &addrs {
+        let doc: TantivyDocument = searcher.doc(*addr)?;
+        let path = doc
+            .get_first(fields.f_path)
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        if let Some(r) = root {
+            if !Path::new(&path).starts_with(r) {
+                continue;
+            }
+        }
+        let mtime = doc
+            .get_first(fields.f_mtime)
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let size = doc
+            .get_first(fields.f_size)
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0)
+            .max(0) as u64;
+        out.push((path, mtime, size));
+    }
+    // 显式 drop：句柄同步关闭（同 count_docs 的 Windows 删除前置条件）
+    drop(searcher);
+    drop(reader);
+    drop(index);
+    Ok(out)
+}
+
 /* --------------------------------- 版本持久化 --------------------------------- */
 
 /// 校验 meta.json 记录的 schema 版本；缺失 / 损坏 / 不符 → 指引重建
