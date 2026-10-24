@@ -14,7 +14,7 @@ use tauri::AppHandle;
 
 use crate::commands::index_admin::ScanReport;
 
-/// 索引任务（统一三入口：手动目录索引 / 定时与 watch 全根刷新 / 重建）
+/// 索引任务（统一三入口：手动目录索引 / 定时与 watch 全根刷新 / watch 增量同步 / 重建）
 pub enum IndexTask {
     /// GUI「索引目录」：登记根目录 + 按类型规则全量索引（带回执）
     Directory {
@@ -24,6 +24,8 @@ pub enum IndexTask {
     },
     /// 定时 / watch 触发：全部已索引根目录幂等刷新（无回执，不等结果）
     Roots(Vec<PathBuf>),
+    /// watch 触发（F-3 O2）：按 root 分桶的增量同步（无回执；失败回退由执行体负责）
+    SyncRoots(Vec<PathBuf>),
     /// 清空 + 遍历全部根目录重建（带回执）
     Rebuild {
         reply: Option<Sender<Result<(), String>>>,
@@ -63,6 +65,9 @@ pub fn init(app: AppHandle) {
                         }
                         IndexTask::Roots(roots) => {
                             crate::commands::index_admin::run_roots_job(&app, &roots);
+                        }
+                        IndexTask::SyncRoots(roots) => {
+                            crate::commands::index_admin::run_sync_job(&app, &roots);
                         }
                         IndexTask::Rebuild { reply } => {
                             let r = crate::commands::index_admin::rebuild_job(&app);

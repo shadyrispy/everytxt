@@ -307,6 +307,8 @@ export interface AppConfig {
   fitSystemScale: boolean
   /** 自定义缩放百分比（50..=200，仅 fitSystemScale=false 生效） */
   customZoom: number
+  /** 实时更新走 per-root 增量同步（F-3/O2）：true = 增量；false = 旧全量行为 */
+  realtimeIncremental?: boolean
   hotkeys: HotkeyBinding[]
 }
 

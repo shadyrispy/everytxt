@@ -472,6 +472,8 @@ fn watcher_disabled_by_env() -> bool {
 }
 
 /// 实时更新（文件监听）触发的索引：提交全根刷新任务（不等结果）。
+///
+/// `realtime_incremental=false` 时的旧行为路径（F-3 开关回退）。
 pub fn trigger_realtime_index(roots: Vec<PathBuf>) {
     if roots.is_empty() {
         return;
@@ -479,10 +481,110 @@ pub fn trigger_realtime_index(roots: Vec<PathBuf>) {
     indexer_queue::submit(IndexTask::Roots(roots));
 }
 
+/// 把 watch 事件 paths 按所属 root 分桶（F-3 per-root 隔离）。
+///
+/// 规则：
+/// - 每个 path 归入**最长匹配**的 root（嵌套 root 时归最内层，避免外层
+///   root 的全量 walk 把内层文件也带走——虽然 sync_root 幂等，但按最内层
+///   同步语义最精确）；
+/// - `paths` 为空（watch 聚合超上限的 root 桶信号，R6）→ 返回全部 roots
+///   （回落各 root 全量 `sync_root`——此时逐文件判定本就不划算）；
+/// - 任一 path 归属不明（不在任何 root 之下）→ 返回全部 roots（安全侧：
+///   增量 sync 对未变文件是跳过，全 root 同步的代价仅是元数据 walk）。
+pub(crate) fn bucket_paths_by_root(paths: &[PathBuf], roots: &[PathBuf]) -> Vec<PathBuf> {
+    if paths.is_empty() {
+        return roots.to_vec();
+    }
+    let mut hit: Vec<PathBuf> = Vec::new();
+    for p in paths {
+        let best = roots
+            .iter()
+            .filter(|r| p.starts_with(r))
+            .max_by_key(|r| r.as_os_str().len());
+        match best {
+            Some(r) => {
+                if !hit.contains(r) {
+                    hit.push(r.clone());
+                }
+            }
+            None => return roots.to_vec(),
+        }
+    }
+    if hit.is_empty() {
+        roots.to_vec()
+    } else {
+        hit
+    }
+}
+
+/// watch 触发的 per-root 增量同步（F-3 O2；队列内串行，与重建/手动索引
+/// 经 `ctl.running` 互斥——互斥失败走「跳过 + 通知前端」，不回退全量抖动）。
+///
+/// 任桶 `sync_root` 失败（writer 锁争用/IO 错误）→ 该桶回退现有全量路径
+/// `index_directory_controlled`（旧路径即安全网）；增量失败绝不丢更新。
+/// root 不存在的桶无需处理：`sync_root` 内部 walk 空清单 → 该 root 文档
+/// 全删（期望语义，与方案 §4 F-2 一致）。
+pub(crate) fn run_sync_job(app: &tauri::AppHandle, roots: &[PathBuf]) {
+    let ctl = rebuild_ctl();
+    if ctl.running.swap(true, Ordering::SeqCst) {
+        eprintln!("实时同步跳过：已有重建/手动索引任务在运行");
+        emit_skipped(app);
+        return;
+    }
+    ctl.control.reset();
+
+    let (index_dir, rules, cfg) = {
+        let st = app.state::<AppState>();
+        let cfg = match Config::load(&st.index_dir()) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("实时同步读取配置失败（跳过本次）: {e}");
+                ctl.running.store(false, Ordering::SeqCst);
+                emit_skipped(app);
+                return;
+            }
+        };
+        let rules = cfg.compile_rules(None).unwrap_or_else(|_| RuleSet::empty());
+        (st.index_dir().clone(), rules, cfg)
+    };
+
+    for root in roots {
+        if ctl.control.is_cancelled() {
+            break;
+        }
+        match stcore::indexer::sync_root(&index_dir, root, &rules, &cfg, Some(&ctl.control)) {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("实时同步失败，回退全量 {}: {e}", root.display());
+                if !root.exists() {
+                    continue; // root 已没了：sync 的删除语义由 walk 空清单覆盖
+                }
+                if let Err(e2) = stcore::indexer::index_directory_controlled(
+                    root,
+                    &index_dir,
+                    &rules,
+                    &cfg,
+                    Some(&ctl.control),
+                    |p| emit_progress(app, &p),
+                ) {
+                    eprintln!("回退全量也失败 {}: {e2}", root.display());
+                }
+            }
+        }
+    }
+
+    ctl.running.store(false, Ordering::SeqCst);
+    emit_done(app);
+}
+
 /// 重启文件监听。
 ///
 /// 句柄存进程级 `OnceLock<Mutex<Option<RootWatcher>>>`：已存在则仅热切换根目录，否则新建。
 /// 读取配置失败时维持现有监听（与 `restart_scheduler` 同序：先读配置，成功才改句柄）。
+///
+/// F-3（O2）：回调走 `watch::start_with_paths` 拿事件 paths，按 root 分桶提交
+/// `IndexTask::SyncRoots`（增量同步）；`AppConfig.realtime_incremental=false`
+/// 时提交 `IndexTask::Roots`（旧全量行为，逐字节等价）。
 pub fn restart_watcher(app: &tauri::AppHandle) {
     if watcher_disabled_by_env() {
         eprintln!("实时更新已禁用 (SEARCH_TOOL_WATCH)");
@@ -509,19 +611,36 @@ pub fn restart_watcher(app: &tauri::AppHandle) {
     }
 
     let app_cb = app.clone();
-    let on_change = std::sync::Arc::new(move || {
+    let on_change = std::sync::Arc::new(move |paths: Vec<PathBuf>| {
         // 回调内重新读配置：避免使用启动时的过期 roots 快照
-        let roots: Vec<PathBuf> = {
-            let st = app_cb.state::<AppState>();
-            match Config::load(&st.index_dir()) {
-                Ok(c) => c.indexed_roots.iter().map(PathBuf::from).collect(),
-                Err(_) => Vec::new(),
+        let st = app_cb.state::<AppState>();
+        let (roots, incremental) = match Config::load(&st.index_dir()) {
+            Ok(c) => {
+                let inc =
+                    crate::commands::shell::AppConfig::load(&st.index_dir()).realtime_incremental;
+                (
+                    c.indexed_roots
+                        .iter()
+                        .map(PathBuf::from)
+                        .collect::<Vec<_>>(),
+                    inc,
+                )
             }
+            Err(_) => (Vec::new(), true),
         };
-        trigger_realtime_index(roots);
+        if roots.is_empty() {
+            return;
+        }
+        if incremental {
+            // F-3：per-root 分桶增量同步（paths 为空 = 聚合超限的 root 桶信号）
+            indexer_queue::submit(IndexTask::SyncRoots(bucket_paths_by_root(&paths, &roots)));
+        } else {
+            // 开关关：旧行为（全根全量刷新）
+            trigger_realtime_index(roots);
+        }
     });
 
-    match stcore::watch::start(&roots, on_change) {
+    match stcore::watch::start_with_paths(&roots, on_change) {
         Some(w) => *guard = Some(w),
         None => eprintln!("实时更新启动失败（文件监听不可用，索引将不自动更新）"),
     }
@@ -845,5 +964,45 @@ mod tests {
         assert!(ctl.control.is_cancelled());
         ctl.control.reset();
         assert!(!ctl.control.is_cancelled() && !ctl.control.is_paused());
+    }
+
+    /* --------------------------- F-3 分桶语义锁 --------------------------- */
+
+    #[test]
+    fn bucket_paths_groups_by_root_with_dedup() {
+        let roots = vec![PathBuf::from("/r1"), PathBuf::from("/r2")];
+        let paths = vec![
+            PathBuf::from("/r1/a.txt"),
+            PathBuf::from("/r1/sub/b.txt"),
+            PathBuf::from("/r2/c.txt"),
+        ];
+        let buckets = bucket_paths_by_root(&paths, &roots);
+        assert_eq!(buckets.len(), 2, "两个 root 各一桶");
+        assert!(buckets.contains(&PathBuf::from("/r1")));
+        assert!(buckets.contains(&PathBuf::from("/r2")));
+    }
+
+    #[test]
+    fn bucket_paths_nested_root_longest_match() {
+        // 嵌套 root：/r/inner 的变更只归内层（最长匹配），不触发外层全 walk
+        let roots = vec![PathBuf::from("/r"), PathBuf::from("/r/inner")];
+        let paths = vec![PathBuf::from("/r/inner/x.txt")];
+        let buckets = bucket_paths_by_root(&paths, &roots);
+        assert_eq!(buckets, vec![PathBuf::from("/r/inner")]);
+    }
+
+    /// R6：paths 为空（聚合超限的 root 桶信号）→ 全部 roots 回落全量 sync_root
+    #[test]
+    fn bucket_paths_empty_signal_means_all_roots() {
+        let roots = vec![PathBuf::from("/r1"), PathBuf::from("/r2")];
+        assert_eq!(bucket_paths_by_root(&[], &roots), roots);
+    }
+
+    /// 归属不明（不在任何 root 之下）→ 全部 roots（安全侧）
+    #[test]
+    fn bucket_paths_unattributable_means_all_roots() {
+        let roots = vec![PathBuf::from("/r1"), PathBuf::from("/r2")];
+        let paths = vec![PathBuf::from("/elsewhere/x.txt")];
+        assert_eq!(bucket_paths_by_root(&paths, &roots), roots);
     }
 }

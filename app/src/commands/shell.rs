@@ -97,6 +97,11 @@ pub struct AppConfig {
     /// 自定义缩放百分比（50..=200，仅 fit_system_scale=false 时应用）
     #[serde(default = "default_custom_zoom")]
     pub custom_zoom: u32,
+    /// 实时更新走 per-root 增量同步（批次 F / O2）：true = watch 事件按 root
+    /// 分桶走 `indexer::sync_root`（跳过未变文件）；false = 旧行为（全根全量
+    /// 刷新任务）。真机验证期可一键回退旧行为。
+    #[serde(default = "default_true")]
+    pub realtime_incremental: bool,
     #[serde(default = "default_hotkeys")]
     pub hotkeys: Vec<HotkeyBinding>,
 }
@@ -123,6 +128,7 @@ impl Default for AppConfig {
             right_click_search: false,
             fit_system_scale: true,
             custom_zoom: default_custom_zoom(),
+            realtime_incremental: true,
             hotkeys: default_hotkeys(),
         }
     }
@@ -720,6 +726,31 @@ fn handle_socket_op(app: &AppHandle, line: &str, mut w: impl std::io::Write) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// F-3 开关：默认开（增量同步）；缺字段的旧 config.json 反序列化回退 true
+    /// （`#[serde(default = "default_true")]` 兼容性锁）。
+    #[test]
+    fn app_config_realtime_incremental_defaults_true() {
+        assert!(AppConfig::default().realtime_incremental);
+
+        // 缺字段的旧 JSON（模拟升级前保存的配置）→ 默认 true，不报错
+        let legacy = r#"{"theme":"system","language":"zh-CN"}"#;
+        let cfg: AppConfig = serde_json::from_str(legacy).unwrap();
+        assert!(cfg.realtime_incremental, "旧配置缺字段应回退默认 true");
+
+        // 显式 false 可 roundtrip（真机验证期回退旧行为）
+        let c = AppConfig {
+            realtime_incremental: false,
+            ..AppConfig::default()
+        };
+        let json = serde_json::to_string(&c).unwrap();
+        assert!(
+            json.contains("\"realtimeIncremental\":false"),
+            "字段名应 camelCase"
+        );
+        let back: AppConfig = serde_json::from_str(&json).unwrap();
+        assert!(!back.realtime_incremental);
+    }
 
     #[test]
     fn resolve_recent_label_falls_back_to_main() {
