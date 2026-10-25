@@ -264,4 +264,44 @@ mod tests {
             );
         }
     }
+
+    /// 集成（O2 核心场景）：**保存已存在文件**（编辑器 Ctrl+S）也触发
+    /// 带 paths 的回退——inotify Modify 事件路径正确透传，F-3 据此分桶
+    /// 增量同步。既有 create 测试不覆盖此路径。
+    #[test]
+    fn start_with_paths_fires_on_modify() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("doc.txt");
+        std::fs::write(&target, b"v1").unwrap();
+
+        let bursts: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+        let b = Arc::clone(&bursts);
+        let w = start_with_paths(
+            &[dir.path().to_path_buf()],
+            Arc::new(move |paths| b.lock().unwrap().extend(paths)),
+        )
+        .expect("watcher 应启动");
+
+        // 留时间让 inotify 完成 watch 注册（含已存在文件的监听）
+        thread::sleep(Duration::from_millis(200));
+        std::fs::write(&target, b"v2 content").unwrap();
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            if bursts
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|p| p.ends_with("doc.txt"))
+            {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "3s 内应收到保存事件的 paths"
+            );
+            thread::sleep(Duration::from_millis(100));
+        }
+        drop(w);
+    }
 }
